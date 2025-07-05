@@ -1,33 +1,28 @@
 import subprocess
-import random
+import os
 
-# 定義: 各エフェクトのフィルター文字列
-EFFECTS = {
-    'inside_feedback': 'tblend=all_mode=addition',
-    'outside_feedback': 'tblend=all_mode=difference',
-    'chromakey': 'chromakey=0x00FF00:0.3:0.2',
-    'superimpose': '[0:v][0:v]overlay=10:10',
-    'stop_motion': 'select=not(mod(n\\,5)),setpts=N/FRAME_RATE/TB',
-    'telop': "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='%{filename}':x=(w-text_w)/2:y=h-50:fontsize=24:fontcolor=white"
-}
-
-# ランダムにパラメータを調整 (例)
-def randomize_filter(filter_str):
-    # 必要に応じてパラメータを変化させる
-    return filter_str
-
-# 全てのエフェクトを同時に適用するフィルターコンプレックスを構築
-filters = []
-for name, f in EFFECTS.items():
-    filters.append(randomize_filter(f))
-
-filter_complex = ';'.join(filters)
+# 各エフェクトを順に適用し、最終ストリームを[out]としてマッピング
+filter_complex = (
+    # インサイド・フィードバック（自己ブレンド）
+    '[0:v][0:v]tblend=all_mode=addition[fb1];'
+    # アウトサイド・フィードバック（二重ブレンド）
+    '[fb1][fb1]tblend=all_mode=difference[fb2];'
+    # クロマキー
+    '[fb2]chromakey=0x00FF00:0.3:0.2[ck];'
+    # スーパーインポーズ（微小オフセット）
+    '[ck][ck]overlay=10:10[ov];'
+    # コマ撮り（フレーム間セレクト）
+    '[ov]select=not(mod(n\,5)),setpts=N/FRAME_RATE/TB[sm];'
+    # テロップ表示
+    "[sm]drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='${{FILENAME}}':x=(w-text_w)/2:y=h-50:fontsize=24:fontcolor=white[out]"
+)
 
 cmd = [
-    'ffmpeg', '-y', '-i', subprocess.os.environ['VIDEO_IN'],
+    'ffmpeg', '-y',
+    '-i', os.environ['VIDEO_IN'],
     '-filter_complex', filter_complex,
-    '-an', subprocess.os.environ['VIDEO_OUT']
+    '-map', '[out]',
+    '-an', os.environ['VIDEO_OUT']
 ]
-
 print('Running:', ' '.join(cmd))
-subprocess.run(cmd, check=True)
+subprocess.run(cmd, shell=False, check=True)
