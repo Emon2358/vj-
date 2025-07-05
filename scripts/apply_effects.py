@@ -24,10 +24,10 @@ for name, f in EFFECTS.items():
 filter_complex = ';'.join(filters)
 
 cmd = [
-    'ffmpeg', '-y', '-i', '"' + subprocess.os.environ['VIDEO_IN'] + '"',
+    'ffmpeg', '-y', '-i', subprocess.os.environ['VIDEO_IN'],
     '-filter_complex', filter_complex,
     '-an', subprocess.os.environ['VIDEO_OUT']
 ]
 
 print('Running:', ' '.join(cmd))
-subprocess.run(' '.join(cmd), shell=True, check=True)
+subprocess.run(cmd, check=True)
