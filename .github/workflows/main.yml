@@ -1,3 +1,4 @@
+# .github/workflows/apply-effects.yml
 name: Apply Random Video Effects
 
 on:
@@ -26,12 +27,14 @@ jobs:
     - run: |
         sudo apt-get update
         sudo apt-get install -y ffmpeg
+        pip install --upgrade pip
+        pip install yt-dlp
       shell: bash
 
     - name: Download Niconico video
       run: |
         mkdir -p videos
-        youtube-dl -o videos/input.mp4 "${{ github.event.inputs.video_link }}"
+        yt-dlp -o videos/input.mp4 "${{ github.event.inputs.video_link }}"
 
     - name: Apply random effects
       env:
