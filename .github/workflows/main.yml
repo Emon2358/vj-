@@ -3,8 +3,8 @@ name: Apply Extreme Glitch Effects
 on:
   workflow_dispatch:
     inputs:
-      video_links:
-        description: 'Comma-separated list of Nico Nico video URLs (e.g., "https://nicovideo.jp/watch/sm12345678,https://nicovideo.jp/watch/sm87654321")'
+      VIDEO_LINK:
+        description: 'Nico Nico video URL (e.g., "https://nicovideo.jp/watch/sm12345678")'
         required: true
         default: ''
   push:
@@ -19,47 +19,44 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
-      with:
-        fetch-depth: 0
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
-    - name: Set up Python, FFmpeg, and yt-dlp
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
+      - name: Set up Python, FFmpeg, and yt-dlp
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
 
-    - name: Install system dependencies and Python packages
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y ffmpeg
-        pip install --upgrade pip
-        pip install yt-dlp
-      shell: bash
+      - name: Install system dependencies and Python packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          pip install --upgrade pip
+          pip install yt-dlp
+        shell: bash
 
-    - name: Create videos directory
-      run: mkdir -p videos
+      - name: Create videos directory
+        run: mkdir -p videos
 
-    - name: Run Glitch Effects Script
-      env:
-        VIDEO_LINKS: ${{ github.event.inputs.video_links }}
-      run: |
-        python scripts/apply_effects.py
+      - name: Run Glitch Effects Script
+        env:
+          VIDEO_LINK: ${{ github.event.inputs.VIDEO_LINK }}
+        run: |
+          python scripts/apply_effects.py
 
-    - name: Commit and Push Processed Video to Repository
-      run: |
-        git config --global user.name 'github-actions[bot]'
-        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-        # Pull latest changes to avoid conflicts
-        git pull origin main
-        # Stage any new processed video files
-        git add videos/processed_*.mp4
-        # Commit if there are changes
-        if ! git diff-index --quiet HEAD; then
-            git commit -m "Add processed video from workflow run on $(date +'%Y-%m-%d %H:%M:%S')"
-            git push origin main
-        else
-            echo "No changes to commit"
-        fi
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Commit and Push Processed Video to Repository
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git pull origin main
+          git add videos/processed_*.mp4
+          if ! git diff-index --quiet HEAD; then
+              git commit -m "Add processed video from workflow run on $(date +'%Y-%m-%d %H:%M:%S')"
+              git push origin main
+          else
+              echo "No changes to commit"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
