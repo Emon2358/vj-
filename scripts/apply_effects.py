@@ -104,7 +104,7 @@ def process_video(input_files, output_path):
     subprocess.run(cmd, check=True)
 
 def main():
-    # Expect environment variable VIDEO_LINKS as comma separated URLs
+    # Expect environment variable VIDEO_LINKS as comma-separated URLs.
     video_links_env = os.environ.get("VIDEO_LINKS", "")
     if not video_links_env:
         sys.exit("Error: VIDEO_LINKS environment variable must be set with comma-separated video URLs")
@@ -116,7 +116,7 @@ def main():
     # Create videos directory if it doesn't exist
     os.makedirs("videos", exist_ok=True)
     
-    # Download all videos and get local file names
+    # Download all videos and get local file names via yt-dlp
     downloaded_files = download_videos(video_links, now)
     
     # Define output file name, e.g., processed_{datetime}.mp4
