@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       video_links:
-        description: 'Comma-separated list of Nico Nico video URLs (e.g., "https://nico1,https://nico2")'
+        description: 'Comma-separated list of Nico Nico video URLs (e.g., "https://nicovideo.jp/watch/sm12345678,https://nicovideo.jp/watch/sm87654321")'
         required: true
         default: ''
   push:
@@ -55,8 +55,11 @@ jobs:
         # Stage any new processed video files
         git add videos/processed_*.mp4
         # Commit if there are changes
-        git diff-index --quiet HEAD || git commit -m "Add processed video from workflow run on $(date +'%Y-%m-%d %H:%M:%S')"
-        git push origin main
+        if ! git diff-index --quiet HEAD; then
+            git commit -m "Add processed video from workflow run on $(date +'%Y-%m-%d %H:%M:%S')"
+            git push origin main
+        else
+            echo "No changes to commit"
+        fi
       env:
-        # GITHUB_TOKEN is automatically provided by GitHub Actions.
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
