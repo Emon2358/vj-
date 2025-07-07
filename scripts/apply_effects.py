@@ -24,8 +24,9 @@ def download_videos(video_links, base_filename):
 def build_filter_complex(num_inputs):
     """
     Constructs a filter_complex chain that:
+      - Scales each input video to a common resolution (320x240) to ensure proper blending.
       - For each input video [i:v]:
-          * Splits into two streams.
+          * Scales to 320x240, then splits into two streams.
           * Applies inside feedback via tmix with maximum intensity.
           * Applies outside feedback via a setpts delay.
           * Blends both using addition.
@@ -38,8 +39,8 @@ def build_filter_complex(num_inputs):
 
     # Process each input video
     for i in range(num_inputs):
-        # Split into two paths: one for inside feedback and one for delay (outside feedback)
-        filter_parts.append(f"[{i}:v]split=2[v{i}a][v{i}b];")
+        # Scale video to 320x240 to match resolutions and then split
+        filter_parts.append(f"[{i}:v]scale=320:240,split=2[v{i}a][v{i}b];")
         # Inside feedback: tmix with maximum intensity (heavy blending)
         filter_parts.append(f"[v{i}a]tmix=frames=10:weights='1 1 1 1 1 1 1 1 1 1'[v{i}ifb];")
         # Outside feedback: delay the video signal
@@ -47,7 +48,6 @@ def build_filter_complex(num_inputs):
         # Blend the two feedbacks for a superimposed effect
         filter_parts.append(f"[v{i}ifb][v{i}ofb]blend=all_mode=addition[v{i}blend];")
         # Apply stop-motion effect (drop half the frames) and add warmth via eq filter
-        # Warm effect: slight brightness up, contrast and saturation increased
         filter_parts.append(
             f"[v{i}blend]select='not(mod(n,2))',setpts=N/FRAME_RATE/TB,eq=brightness=0.05:contrast=1.5:saturation=1.5[proc{i}];"
         )
@@ -68,7 +68,6 @@ def build_filter_complex(num_inputs):
         final_video = final_label
 
     # Construct audio mixing part: mix all audio streams from inputs
-    # If an input might not have audio, this can fail; assume they do.
     audio_inputs = "".join(f"[{i}:a]" for i in range(num_inputs))
     filter_parts.append(f"{audio_inputs}amix=inputs={num_inputs}[aout]")
 
