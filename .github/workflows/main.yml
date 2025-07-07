@@ -11,6 +11,10 @@ on:
     paths:
       - 'scripts/**'
 
+# 重要: リポジトリへの書き込み権限を明示的に設定
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -20,6 +24,8 @@ jobs:
       uses: actions/checkout@v3
       with:
         fetch-depth: 0
+        # 重要: Personal Access Tokenを使用
+        token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Set up Python & FFmpeg
       uses: actions/setup-python@v4
@@ -49,22 +55,25 @@ jobs:
       run: |
         python scripts/apply_effects.py
 
-    - name: Push to New Branch
+    - name: Configure Git
       run: |
-        # 新しいブランチを作成
-        git checkout -b add-video-${{ steps.datetime.outputs.datetime }}
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+    - name: Commit and Push Changes
+      run: |
+        # 最新の変更を取得
+        git pull origin main
         
-        # 生成された動画をブランチに追加
+        # 変更をステージング
         git add videos/processed_${{ steps.datetime.outputs.datetime }}.mp4
         
         # 変更をコミット
-        git config --global user.name 'github-actions[bot]'
-        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-        git commit -m "Add processed video from workflow run"
+        git commit -m "Add processed video $(date +'%Y-%m-%d %H:%M:%S')"
         
-        # ブランチをプッシュ
-        git push origin add-video-${{ steps.datetime.outputs.datetime }}
+        # メインブランチにプッシュ
+        git push origin main
 
-    - name: Cleanup
+    - name: Cleanup input video
       run: |
-        rm videos/input_${{ steps.datetime.outputs.datetime }}.mp4
+        rm -f videos/input_${{ steps.datetime.outputs.datetime }}.mp4
