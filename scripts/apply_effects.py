@@ -26,19 +26,18 @@ def process_video(input_file, output_path):
     Processing steps:
       1. Extract edges using the 'edgedetect' filter.
          (This produces white lines on a black background.)
-      2. Use the LUT filter to set the alpha channel: if pixel value > 128 then opaque, else transparent.
+      2. Use the LUT filter to set the alpha channel: if the pixel value is greater than 128 then opaque, else transparent.
       3. Create a solid green background (matching the chroma-key color).
       4. Overlay the edge extraction (with transparency) onto the colored background.
       5. Apply a tmix filter to produce a distinct afterimage effect.
-      6. Pass through the audio unchanged.
+      6. Pass through audio unchanged.
     """
-    # Note: In the LUT filter, commas and comparison operators need escaping.
-    # Here we escape commas as "\," and the ">" as "\>".
+    # Updated LUT syntax to "if(gt(val,128),255,0)" for proper parsing by FFmpeg.
     filter_complex = (
         # Step 1: Extract edges.
         "[0:v]edgedetect=low=0.1:high=0.4,format=rgba,"
-        # Step 2: Use LUT to set alpha channel.
-        "lut=a=if(val\\>128\\,255\\,0)[lines];"
+        # Step 2: Use LUT to set alpha: if pixel value > 128 then opaque, else transparent.
+        "lut=a='if(gt(val,128),255,0)'[lines];"
         # Step 3: Create a solid green background (320x240 resolution).
         "color=c=green:s=320x240,format=rgba[bg];"
         # Step 4: Overlay the edge image onto the background.
