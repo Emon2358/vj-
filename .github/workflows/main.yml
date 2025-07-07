@@ -49,7 +49,7 @@ jobs:
       run: |
         python scripts/apply_effects.py
 
-    - name: Create Pull Request Branch
+    - name: Push to New Branch
       run: |
         # 新しいブランチを作成
         git checkout -b add-video-${{ steps.datetime.outputs.datetime }}
@@ -64,17 +64,6 @@ jobs:
         
         # ブランチをプッシュ
         git push origin add-video-${{ steps.datetime.outputs.datetime }}
-
-    - name: Create Pull Request
-      run: |
-        # GitHub CLIを使用してPRを作成
-        gh pr create \
-          --title "Add processed video: $(date +'%Y-%m-%d %H:%M:%S')" \
-          --body "Processed video from workflow run" \
-          --head add-video-${{ steps.datetime.outputs.datetime }} \
-          --base main
-      env:
-        GH_TOKEN: ${{ github.token }}
 
     - name: Cleanup
       run: |
