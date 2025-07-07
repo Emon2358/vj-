@@ -1,4 +1,3 @@
-# .github/workflows/apply-effects.yml
 name: Apply Random Video Effects
 
 on:
@@ -19,6 +18,8 @@ jobs:
     steps:
     - name: Checkout repo
       uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
 
     - name: Set up Python & FFmpeg
       uses: actions/setup-python@v4
@@ -31,33 +32,50 @@ jobs:
         pip install yt-dlp
       shell: bash
 
+    - name: Get current datetime
+      id: datetime
+      run: echo "datetime=$(date +'%Y%m%d_%H%M%S')" >> $GITHUB_OUTPUT
+      shell: bash
+
     - name: Download Niconico video
       run: |
         mkdir -p videos
-        yt-dlp -o videos/input.mp4 "${{ github.event.inputs.video_link }}"
+        yt-dlp -o videos/input_${{ steps.datetime.outputs.datetime }}.mp4 "${{ github.event.inputs.video_link }}"
 
     - name: Apply random effects
       env:
-        VIDEO_IN: videos/input.mp4
-        VIDEO_OUT: videos/output.mp4
+        VIDEO_IN: videos/input_${{ steps.datetime.outputs.datetime }}.mp4
+        VIDEO_OUT: videos/processed_${{ steps.datetime.outputs.datetime }}.mp4
       run: |
         python scripts/apply_effects.py
 
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      with:
-        tag_name: v${{ github.run_number }}
-        release_name: "Processed Video ${{ github.run_number }}"
-        draft: false
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Create Pull Request Branch
+      run: |
+        # 新しいブランチを作成
+        git checkout -b add-video-${{ steps.datetime.outputs.datetime }}
+        
+        # 生成された動画をブランチに追加
+        git add videos/processed_${{ steps.datetime.outputs.datetime }}.mp4
+        
+        # 変更をコミット
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+        git commit -m "Add processed video from workflow run"
+        
+        # ブランチをプッシュ
+        git push origin add-video-${{ steps.datetime.outputs.datetime }}
 
-    - name: Upload video to Release
-      uses: actions/upload-release-asset@v1
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: videos/output.mp4
-        asset_name: output.mp4
-        asset_content_type: video/mp4
+    - name: Create Pull Request
+      run: |
+        # GitHub CLIを使用してPRを作成
+        gh pr create \
+          --title "Add processed video: $(date +'%Y-%m-%d %H:%M:%S')" \
+          --body "Processed video from workflow run" \
+          --head add-video-${{ steps.datetime.outputs.datetime }} \
+          --base main
+      env:
+        GH_TOKEN: ${{ github.token }}
+
+    - name: Cleanup
+      run: |
+        rm videos/input_${{ steps.datetime.outputs.datetime }}.mp4
