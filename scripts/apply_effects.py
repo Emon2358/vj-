@@ -4,129 +4,114 @@ import sys
 import shlex
 from datetime import datetime
 
-def download_videos(video_links, base_filename):
+def download_video(url, base_filename):
     """
-    Download each video from the comma-separated video_links list using yt-dlp.
-    Returns a list of downloaded filenames.
+    Download the video from the provided URL using yt-dlp.
+    Returns the downloaded filename.
     """
-    downloaded_files = []
-    for idx, link in enumerate(video_links):
-        link = link.strip()
-        if not link:
-            continue
-        output_file = f"videos/input_{idx}_{base_filename}.mp4"
-        cmd = f"yt-dlp -o {output_file} {shlex.quote(link)}"
-        print(f"Downloading video {idx+1}: {link}")
-        subprocess.run(cmd, shell=True, check=True)
-        downloaded_files.append(output_file)
-    return downloaded_files
+    url = url.strip()
+    if not url:
+        sys.exit("No video URL provided.")
+    output_file = f"videos/input_{base_filename}.mp4"
+    # Using yt-dlp (which supports Nico Nico video URLs) to download the video
+    cmd = f"yt-dlp -o {output_file} {shlex.quote(url)}"
+    print(f"Downloading video: {url}")
+    subprocess.run(cmd, shell=True, check=True)
+    return output_file
 
-def build_filter_complex(num_inputs):
+def process_video(input_file, output_path):
     """
-    Constructs a filter_complex chain that:
-      - Scales each input video to a common resolution (320x240) to ensure proper blending.
-      - For each input video [i:v]:
-          * Scales to 320x240, then splits into two streams.
-          * Applies inside feedback via tmix with maximum intensity.
-          * Applies outside feedback via a setpts delay.
-          * Blends both using addition.
-          * Applies a stop-motion effect (frame dropping) and warm tone enhancement.
-          * Result is labeled as [proc{i}].
-      - If multiple processed videos exist, they are blended together using addition.
-      - For audio, all [i:a] streams are mixed using amix.
+    Apply a chain of super-strong glitch effects on a single video.
+    
+    Effects applied concurrently:
+      - インサイド・フィードバック: using tmix.
+      - アウトサイド・フィードバック: using setpts delay.
+      - クロマキー: using colorkey (removes green components).
+      - スーパーインポーズ: blending multiple processed streams.
+      - コマ撮り: stop-motion effect via frame skipping.
+      - テロップとしての映像読み込み: scaling down the video overlay.
+      - オーディオ信号とビデオ信号の混合: mixing original audio with a delayed copy.
+      
+    The final filter_complex chain splits the input video into five branches:
+      [v0] -> for inside feedback,
+      [v1] -> for outside feedback,
+      [v2] -> for chroma key effect,
+      [v3] -> for stop-motion effect,
+      [v4] -> for teletext overlay.
+      
+    They are then blended together in the following order:
+      1. Blend inside and outside feedback ([v0] and [v1]) into [feedback].
+      2. Blend [feedback] with stop-motion [v3] into [combined].
+      3. Overlay the chroma keyed stream [v2] atop [combined] to yield [with_chroma].
+      4. Overlay the teletext stream [v4] (scaled down) into the bottom-right, resulting in [final].
+      
+    For audio, a delayed copy of the audio stream is created and mixed with the original.
     """
-    filter_parts = []
+    # Build filter_complex chain
+    filter_complex = (
+        # Split the input video into 5 copies and scale each to 320x240 for consistency.
+        "[0:v]split=5[v0][v1][v2][v3][v4];"
+        # インサイド・フィードバック: apply heavy tmix on [v0]
+        "[v0]tmix=frames=10:weights='1 1 1 1 1 1 1 1 1 1'[inside];"
+        # アウトサイド・フィードバック: delay [v1]
+        "[v1]setpts=PTS+1/TB[outside];"
+        # Blend inside and outside feedback to create a combined feedback effect.
+        "[inside][outside]blend=all_mode=addition[feedback];"
+        # クロマキー: apply colorkey on [v2] to remove green (0x00FF00)
+        "[v2]colorkey=0x00FF00:0.3:0.2[chroma];"
+        # コマ撮り: apply stop-motion effect on [v3] (drop every other frame)
+        "[v3]select='not(mod(n,2))',setpts=N/FRAME_RATE/TB[stopmo];"
+        # スーパーインポーズ: blend feedback and stop-motion streams
+        "[feedback][stopmo]blend=all_mode=addition[combined];"
+        # テロップ: scale down [v4] for overlay as teletext (e.g., 1/4 size)
+        "[v4]scale=iw/4:ih/4[tele];"
+        # Overlay chroma keyed video over the combined result (position at top-left)
+        "[combined][chroma]overlay=0:0[with_chroma];"
+        # Finally, overlay the teletext video at the bottom-right (10 pixels margin)
+        "[with_chroma][tele]overlay=W-w-10:H-h-10[final];"
+        # Audio: create a delayed copy of the audio and mix with original.
+        "[0:a]adelay=500|500[a_delay];"
+        "[0:a][a_delay]amix=inputs=2[aout]"
+    )
 
-    # Process each input video
-    for i in range(num_inputs):
-        # Scale video to 320x240 to match resolutions and then split
-        filter_parts.append(f"[{i}:v]scale=320:240,split=2[v{i}a][v{i}b];")
-        # Inside feedback: tmix with maximum intensity (heavy blending)
-        filter_parts.append(f"[v{i}a]tmix=frames=10:weights='1 1 1 1 1 1 1 1 1 1'[v{i}ifb];")
-        # Outside feedback: delay the video signal
-        filter_parts.append(f"[v{i}b]setpts=PTS+1/TB[v{i}ofb];")
-        # Blend the two feedbacks for a superimposed effect
-        filter_parts.append(f"[v{i}ifb][v{i}ofb]blend=all_mode=addition[v{i}blend];")
-        # Apply stop-motion effect (drop half the frames) and add warmth via eq filter
-        filter_parts.append(
-            f"[v{i}blend]select='not(mod(n,2))',setpts=N/FRAME_RATE/TB,eq=brightness=0.05:contrast=1.5:saturation=1.5[proc{i}];"
-        )
-
-    # Combine all processed videos if more than one exists
-    if num_inputs == 0:
-        sys.exit("No input videos were downloaded. Exiting.")
-    elif num_inputs == 1:
-        final_video = "[proc0]"
-    else:
-        # Start blending from the first processed video
-        final_label = "[proc0]"
-        for i in range(1, num_inputs):
-            new_label = f"[proc_comb{i}]"
-            # Blend accumulative result with the next processed video using addition
-            filter_parts.append(f"{final_label}[proc{i}]blend=all_mode=addition{new_label};")
-            final_label = new_label
-        final_video = final_label
-
-    # Construct audio mixing part: mix all audio streams from inputs
-    audio_inputs = "".join(f"[{i}:a]" for i in range(num_inputs))
-    filter_parts.append(f"{audio_inputs}amix=inputs={num_inputs}[aout]")
-
-    # Concatenate the filter_complex parts
-    filter_complex = "".join(filter_parts)
-    return filter_complex, final_video
-
-def process_video(input_files, output_path):
-    num_inputs = len(input_files)
-    filter_complex, final_video = build_filter_complex(num_inputs)
-
-    print("Using filter_complex:")
-    print(filter_complex)
-
-    cmd = ["ffmpeg", "-y"]
-    # Add all input files
-    for file in input_files:
-        cmd.extend(["-i", file])
-    # Add the filter_complex chain
-    cmd.extend([
+    cmd = [
+        "ffmpeg", "-y", "-i", input_file,
         "-filter_complex", filter_complex,
-        "-map", final_video,
+        "-map", "[final]",
         "-map", "[aout]",
         "-c:v", "libx264",
         "-preset", "veryfast",
         "-crf", "18",
         "-c:a", "aac",
         output_path
-    ])
+    ]
 
     print("Running ffmpeg command:")
     print(" ".join(cmd))
     subprocess.run(cmd, check=True)
 
 def main():
-    # Expect environment variable VIDEO_LINKS as comma-separated URLs.
-    video_links_env = os.environ.get("VIDEO_LINKS", "")
-    if not video_links_env:
-        sys.exit("Error: VIDEO_LINKS environment variable must be set with comma-separated video URLs")
+    # Use environment variable VIDEO_LINK for the Nico Nico video URL.
+    video_link = os.environ.get("VIDEO_LINK", "")
+    if not video_link:
+        sys.exit("Error: VIDEO_LINK environment variable must be set to a Nico Nico video URL.")
     
-    # Get a base filename based on current datetime
     now = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    
-    video_links = video_links_env.split(",")
-    # Create videos directory if it doesn't exist
+    # Ensure videos directory exists
     os.makedirs("videos", exist_ok=True)
     
-    # Download all videos and get local file names via yt-dlp
-    downloaded_files = download_videos(video_links, now)
+    # Download the video using yt-dlp (which supports Nico Nico)
+    downloaded_file = download_video(video_link, now)
     
-    # Define output file name, e.g., processed_{datetime}.mp4
+    # Define the output file name
     output_file = f"videos/processed_{now}.mp4"
     
-    process_video(downloaded_files, output_file)
+    # Process the downloaded video with all effects applied concurrently.
+    process_video(downloaded_file, output_file)
     
     print(f"Processing complete. Output video: {output_file}")
-    # Optionally, cleanup input videos if desired:
-    # for f in downloaded_files:
-    #     os.remove(f)
+    # Optionally, cleanup input file:
+    # os.remove(downloaded_file)
 
 if __name__ == "__main__":
     main()
