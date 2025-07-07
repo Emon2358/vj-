@@ -1,4 +1,4 @@
-name: Apply Extreme Glitch Effects
+name: Apply Video Line Extraction Effects
 
 on:
   workflow_dispatch:
@@ -17,7 +17,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -40,11 +40,10 @@ jobs:
       - name: Create videos directory
         run: mkdir -p videos
 
-      - name: Run Glitch Effects Script
+      - name: Run Video Effects Script
         env:
           VIDEO_LINK: ${{ github.event.inputs.VIDEO_LINK }}
-        run: |
-          python scripts/apply_effects.py
+        run: python scripts/apply_effects.py
 
       - name: Commit and Push Processed Video to Repository
         run: |
