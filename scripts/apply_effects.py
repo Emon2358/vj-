@@ -3,7 +3,7 @@ import os
 import sys
 import shlex
 from datetime import datetime
-import random # ランダムな値を生成するために追加
+import random
 
 def download_video(url, base_filename):
     """ニコニコ動画からダウンロード"""
@@ -41,82 +41,93 @@ def process_video(input_file, output_path):
                 num, den = map(int, parts[2].split('/'))
                 input_fps = num / den
             except ValueError:
-                pass # フレームレート取得失敗時はデフォルト値を使用
+                pass 
         print(f"Detected input resolution: {input_width}x{input_height}, FPS: {input_fps:.2f}")
     except Exception as e:
         print(f"Could not detect video resolution/FPS, using default {input_width}x{input_height}, {input_fps:.2f}fps. Error: {e}")
 
     # ランダムなグリッチ値を生成
-    random_rotate_angle = round(random.uniform(1.0, 5.0), 2) # より大きなランダム回転
-    random_geq_factor = random.randint(100, 300) # geqの強度を上げる
-    random_opacity = round(random.uniform(0.7, 0.99), 2) # blendの不透明度をランダムに高くする
-    glitch_fps = random.choice([5, 10, 15, 60, 120]) # 意図的に異なるフレームレートを混ぜる
+    random_rotate_angle = round(random.uniform(0.5, 10.0), 2) # より大きなランダム回転
+    random_geq_factor = random.randint(150, 500) # geqの強度をさらに上げる
+    random_opacity = round(random.uniform(0.8, 1.0), 2) # blendの不透明度を最大に近づける
+    glitch_fps = random.choice([1, 2, 5, 60, 120]) # 極端なフレームレートを混ぜる
+    pixel_block_size = random.randint(8, 32) # ピクセル化ブロックのサイズをランダムに
     
-    # タイムライン破壊のためのダミー字幕ファイルを作成 (FFmpegがファイルを探す場所に適当なファイル)
-    # 実際の字幕は表示されないが、フィルターチェーンの複雑性を増し、エラーを誘発する可能性を高める
-    dummy_ass_file = "dummy_glitch.ass"
-    with open(dummy_ass_file, "w") as f:
-        f.write("[Script Info]\n")
-        f.write("ScriptType: v4.00+\n")
-        f.write("\n[V4+ Styles]\n")
-        f.write("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n")
-        f.write("Style: Default,Arial,20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1\n")
-        f.write("\n[Events]\n")
-        f.write(f"Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
-        f.write(f"Dialogue: 0,0:00:00.00,0:00:00.01,Default,,0,0,0,,{{\\blur10}}Random Glitch Text {random.randint(0, 1000)}\n")
-
+    # ノイズの強度と周期をランダムに
+    noise_freq = round(random.uniform(0.01, 0.5), 2)
+    noise_amp = round(random.uniform(0.1, 0.5), 2)
 
     filter_complex = (
-        # オリジナル映像をsplitで2つに分ける
-        "[0:v]split=2[original][feedback];"
+        # ====== 映像ストリーム1: オリジナルをベースにした破壊的なフィードバック ======
+        "[0:v]split=2[original][feedback_raw];"
         
-        # フィードバック映像に遅延とずれ、様々なグリッチ効果を適用
-        f"[feedback]fps={glitch_fps}," # フレームレートを意図的に変更して時間的な歪みを加える
+        # feedback_raw に極端なグリッチを適用
+        "[feedback_raw]"
+        f"fps={glitch_fps}," # フレームレートを意図的に変更
         f"scale={input_width}:{input_height}," # サイズを揃える
-        "tpad=start=0.1:stop=3," # 100ms遅延
-        f"rotate={random_rotate_angle}:ow=rotw({random_rotate_angle}):oh=roth({random_rotate_angle})," # より大きなランダムな角度で回転
-        f"scale={input_width}:{input_height}," # 回転によってサイズが変わるので、再度元のサイズにスケール
+        "tpad=start=0.05:stop=2," # 短い遅延
+        f"rotate={random_rotate_angle}:ow=rotw({random_rotate_angle}):oh=roth({random_rotate_angle})," # 大角度回転
+        f"scale={input_width}:{input_height}," # 回転後のサイズ調整
         "colorchannelmixer="
-            "1.5:0.5:0.5:0.5:0.5:1.5:0.5:0.5:0.5:0.5:0.5:1.5," # 各チャンネルを極端に混ぜる (より破壊的な値)
-        f"geq=random(1)*{random_geq_factor}:random(1)*{random_geq_factor}:random(1)*{random_geq_factor}," # ピクセル値をランダムに、より強く変化
-        "gblur=sigma=5:steps=2," # ぼかし強度とステップを上げる
-        f"scale=iw/{random.uniform(5, 20)}:ih/{random.uniform(5, 20)},"  # ランダムな粒度でスケールダウン
-        f"scale={input_width}:{input_height}:flags=neighbor," # ニアレストネイバーでピクセル効果を出す
-        "negate," # 色を反転させることでさらに視覚的な混乱を招く
-        "setpts=PTS+random(0)*0.5/TB[delayed];" # setptsでランダムな遅延を付加し、時間的な破壊を強調
+            "1.8:0.2:0.2:0.2:0.2:1.8:0.2:0.2:0.2:0.2:0.2:1.8," # 各チャンネルを極端に混ぜる
+        f"geq=random(1)*{random_geq_factor}:random(1)*{random_geq_factor}:random(1)*{random_geq_factor}," # 強力なランダムノイズ
+        "gblur=sigma=7:steps=3," # ぼかし強度をさらに上げる
+        f"scale=iw/{pixel_block_size}:ih/{pixel_block_size},"  # ランダムな粒度でスケールダウン
+        f"scale={input_width}:{input_height}:flags=neighbor," # ニアレストネイバーでピクセル効果
+        "negate," # 色を反転
+        "loop=loop=20:size=1:start=0," # 短いループで映像をスタック
+        "curves=preset=strong_contrast," # コントラストを強調し、色の破壊を促進
+        "setpts=PTS+random(0)*1/TB[glitch_feedback];" # setptsでランダムな遅延を付加
 
-        # オリジナルとフィードバック映像をブレンド
-        f"[original][delayed]blend=all_mode=difference:all_opacity={random_opacity}[v];" # blendモードをdifferenceに、不透明度を上げる
-        
-        # オーディオはそのまま通過（ここにはグリッチを適用しない）
+        # ====== 映像ストリーム2: ノイズとカラーフォーマット破壊を組み合わせたレイヤー ======
+        # 純粋なノイズと色空間変換による破壊
+        f"color=c=black:s={input_width}x{input_height}:d=10," # 黒の背景
+        f"format=yuv444p," # 高品質なYUV形式に変換（次に劣化させるため）
+        f"noise=all=15:alls=20," # 大量のランダムノイズ
+        f"format=rgb24," # RGBに変換（情報損失と色空間の破壊）
+        f"format=yuv420p," # 再度YUVに戻す（さらなる情報損失）
+        "geq=r='(r(X,Y)+random(0)*100)':g='(g(X,Y)+random(0)*100)':b='(b(X,Y)+random(0)*100)'," # カラーチャンネルをさらにランダムにシフト
+        "setpts=PTS+random(0)*0.8/TB[noise_layer];" # ランダムな遅延
+
+        # ====== 映像ストリーム3: オーディオからの視覚グリッチフィードバック (実験的) ======
+        # オーディオから得られる情報を視覚効果に変換する試み
+        # 音量変化を映像の明るさに反映させるようなイメージ
+        "[0:a]showvolume=f=0:s=0:o=v:c=0xFFAABBCC," # 音量を視覚化（目に見えないが内部で処理）
+        f"geq=g='st(1, gt(abs(st(0, (T*2*PI*0.5)+sin(T*3*PI*0.1))) , 0.5)*255)'," # サイン波ノイズを映像に重ねる (適当な数式)
+        f"scale={input_width}:{input_height},"
+        f"setpts=PTS+random(0)*1.2/TB[audio_glitch];"
+
+        # ====== 最終ブレンド ======
+        # 3つのグリッチ映像ストリームを重ねる
+        "[original][glitch_feedback]blend=all_mode=difference:all_opacity=1.0[blend1];" # 差分ブレンド
+        "[blend1][noise_layer]blend=all_mode=addition:all_opacity=1.0[blend2];" # 加算ブレンドでノイズを強調
+        "[blend2][audio_glitch]blend=all_mode=grainmerge:all_opacity=1.0[v];" # さらにオーディオグリッチをマージ
+
+        # オーディオはそのまま通過（ここではグリッチを適用しないが、必要なら破壊的なフィルターも可能）
         "[0:a]acopy[a]"
     )
 
     # エンコード設定
-    # スライス数を増やすことでエンコード時のデータ破損を誘発し、グリッチを強化する
-    # これはFFmpegの内部的な動作に依存するため、すべての環境で同じ効果が得られるわけではない
-    # また、`-sub_charenc` のような存在しないオプションを意図的に入れることでエラーを誘発する可能性もあるが、
-    # FFmpegがすぐに停止する可能性があるため、ここでは採用しない。
-    
     cmd = [
         "ffmpeg", "-y",
         "-i", input_file,
         "-filter_complex", filter_complex,
-        # `-vf` を使用して `ass` フィルターを追加し、存在しないファイルを指定することでエラーを誘発
-        # この方法はFFmpegがフィルターチェーンでエラーを出すため、通常は勧められないが、グリッチ目的では有効な場合がある
-        # しかし、ここでは`filter_complex`内に直接含める方が安全性が高い
         "-map", "[v]",
         "-map", "[a]",
         "-c:v", "libx264",
-        "-preset", "medium",
-        "-crf", "28", # 画質を意図的に下げて、圧縮アーティファクトをグリッチとして利用
+        "-preset", "ultrafast", # 最速プリセットで、エンコード品質を犠牲にしてグリッチを誘発
+        "-crf", "35", # CRF値を大幅に上げて、圧縮による破壊を最大化
+        "-profile:v", "baseline", # プロファイルを下げ、デコードを難しくする
+        "-level", "3.0", # レベルを下げ、制限をかける
+        "-g", str(random.randint(input_fps * 5, input_fps * 20)), # Iフレーム間隔を大きくし、Pフレームのエラー伝播を助長
+        "-keyint_min", "1", # キーフレームの最小間隔 (あまり影響しないかも)
+        "-sc_threshold", "0", # シーンチェンジ検出を無効に
+        "-b:v", "50k", # 意図的に極端に低いビデオビットレートを設定し、データ不足による破損を誘発
+        "-slices", str(random.randint(8, 32)), # ランダムなスライス数でエンコード時のデータ破損を誘発
+        "-x264-params", "me=dia:subme=0:trellis=0:no-fast-pskip=1:no-dct-decimate=1:nr=5000", # x264のエンコードパラメータを調整し、品質を落とす
         "-c:a", "aac",
-        "-b:a", "64k", # 音声ビットレートも下げて、音声の劣化も促す
+        "-b:a", "32k", # 音声ビットレートをさらに下げ、音声の劣化を最大化
         "-pix_fmt", "yuv420p",
-        "-flags", "+cgop+ilme+ildct", # 不安定なエンコードフラグ
-        "-sc_threshold", "0", # シーンチェンジ検出を無効にし、Iフレーム挿入を減らす (グリッチに貢献)
-        "-g", "1", # GOPサイズを最小にすることで、フレーム間予測のエラーを広げやすくする
-        "-slices", str(random.randint(4, 16)), # ランダムなスライス数でエンコードを試み、データ破損を誘発
         output_path
     ]
 
@@ -126,40 +137,14 @@ def process_video(input_file, output_path):
     try:
         subprocess.run(cmd, check=True)
     except subprocess.CalledProcessError as e:
-        print(f"FFmpeg command failed with exit code {e.returncode}. This might be intentional for extreme glitches!")
+        print(f"FFmpeg command failed with exit code {e.returncode}. This might be an intended part of the extreme glitch process!")
         print(f"Command: {e.cmd}")
         print(f"Output: {e.stdout}")
         print(f"Error: {e.stderr}")
-        # 極端なグリッチを狙うため、FFmpegのエラーを無視して続行するか、特定のコードで終了するか選択
-        # ここでは、エラーが出てもメッセージを表示し、スクリプト自体は終了しないようにする
         if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-            print("Partial output file generated. It might still contain glitches!")
+            print("Partial output file generated. It might still contain extreme glitches!")
         else:
-            sys.exit("FFmpeg failed to produce any output file. Try reducing the intensity of some filters.")
-
-    finally:
-        # ダミー字幕ファイルを削除
-        if os.path.exists(dummy_ass_file):
-            os.remove(dummy_ass_file)
-
-
-def main():
-    video_link = os.environ.get("VIDEO_LINK", "")
-    if not video_link:
-        sys.exit("Error: VIDEO_LINK environment variable must be set with a video URL")
-    
-    now = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    os.makedirs("videos", exist_ok=True)
-    
-    downloaded_file = download_video(video_link, now)
-    output_file = f"videos/processed_{now}.mp4"
-    
-    process_video(downloaded_file, output_file)
-    print(f"Processing complete. Output video: {output_file}")
-    
-    # ファイルサイズの確認
-    final_size = os.path.getsize(output_file)
-    print(f"Final file size: {final_size / 1024 / 1024:.2f}MB")
+            sys.exit("FFmpeg failed to produce any output file. The glitch settings might be too extreme for this input/FFmpeg version. Try slightly reducing random ranges or filter intensities.")
 
 if __name__ == "__main__":
     main()
