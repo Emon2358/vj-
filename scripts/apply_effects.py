@@ -65,7 +65,7 @@ def process_video(input_file, output_path):
     noise_strength = random.randint(20, 50) # ノイズフィルターの強度をさらに上げる
     distortion_factor = round(random.uniform(0.01, 0.1), 3) # ディストーションの強度
     random_chroma_shift = random.randint(10, 50) # 色ずれの強度
-    random_vignette_darkness = round(random.uniform(0.3, 0.8), 2) # ビニエットの暗さ (0.0 - 1.0)
+    # random_vignette_darkness = round(random.uniform(0.3, 0.8), 2) # ビニエットの暗さ (0.0 - 1.0) -> この行は使用しないためコメントアウトまたは削除
     
     # 意図的にエラーを誘発するためのパラメータ
     deadzone = round(random.uniform(0.01, 0.2), 2) # 量子化時のデッドゾーンをランダムに (floatのまま)
@@ -96,7 +96,7 @@ def process_video(input_file, output_path):
         # 新しい破壊フィルターの追加
         f"lenscorrection=k1={distortion_factor}:k2={distortion_factor}," # レンズディストーション
         f"chromakey=0x00FF00:0.1:0.0," # 特定の色を透過（予期せぬ部分が透過する）
-        f"vignette=angle=PI/4:d={random_vignette_darkness}," # <<<< ここを修正: max_value を d (darkness) に変更
+        # f"vignette=angle=PI/4:d={random_vignette_darkness}," # <<<< この行を完全に削除
         f"edgedetect=mode=canny:low=0.1:high=0.4:intensity=5," # エッジ検出を強調
         f"mpdecimate=hi=64*60:lo=64*10:frac=0.3," # フレームを間引くことで時間的な破壊
         "setpts=PTS+random(0)*2/TB[glitch_feedback];" # setptsでランダムな遅延を付加 (遅延をさらに増やす)
