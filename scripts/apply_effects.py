@@ -19,13 +19,9 @@ def process_video(input_file, output_path):
     """
     映像を視認できないほどにグリッチ効果を適用します。
     """
-    # 入力ファイルの解像度を動的に取得するための初期値（もし取得できない場合）
-    # 実際にはffprobeなどで取得するのが望ましいですが、ここでは一旦固定値として進めます。
-    # あなたのログから 320x240 であることがわかっているので、それをデフォルトとします。
+    # FFprobeを使って実際の解像度を取得する
     input_width = 320
     input_height = 240
-
-    # FFprobeを使って実際の解像度を取得する（より堅牢な方法）
     try:
         probe_cmd = [
             "ffprobe", "-v", "error", "-select_streams", "v:0",
@@ -53,7 +49,7 @@ def process_video(input_file, output_path):
         f"scale={input_width}:{input_height}," # 回転によってサイズが変わる可能性があるので、再度元のサイズにスケール
         "colorchannelmixer=0.5:0.5:0.5:0.5:0.5:0.5:0.5:0.5:0.5," # 各チャンネルを強く混ぜる
         "geq=random(1)*100:random(1)*100:random(1)*100," # ピクセル値をランダムに変化させノイズを加える
-        "boxblur=luma_radius=5:luma_sigma=3:chroma_radius=5:chroma_sigma=3," # 全体をぼかして映像を破壊
+        "gblur=sigma=3:steps=1," # ★ここを修正: boxblurの代わりにgblurを使用
         "pixelize=size=16," # ピクセルを大きくして視認性を下げる
         "settb=AVTB," # タイムベース設定
         "setpts=PTS+0.1/TB[delayed];" # さらなる遅延効果
@@ -74,7 +70,7 @@ def process_video(input_file, output_path):
         "-map", "[a]",
         "-c:v", "libx264",
         "-preset", "medium",
-        "-crf", "23", # 画質設定。グリッチなので多少粗くても良い
+        "-crf", "23", 
         "-c:a", "aac",
         "-b:a", "128k",
         "-pix_fmt", "yuv420p",
