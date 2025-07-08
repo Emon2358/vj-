@@ -9,96 +9,91 @@ def download_video(url, base):
 
 def build_super_extreme_filter(w, h, fps):
     # ランダムパラメータ
-    ra    = random.uniform(0.2, math.pi)     # 回転
-    wave  = random.uniform(10, 80)           # 波形歪み
-    tile  = random.choice([2,4,8,16])        # タイルサイズ
+    ra    = random.uniform(0.2, math.pi)     # 回転角
+    wave  = random.uniform(10, 80)           # 波形歪み強度
+    tile  = random.choice([2,4,8,16])        # ミラータイルサイズ
     burst = random.randint(0, int(fps))      # バースト発生フレーム
 
     return (
+        # ストリーム分岐
         "[0:v]split=8[orig][bs][time][chan][mir][wav][postA][postB];"
 
-        # ビットストリーム可視化＆歪み
-        "[bs]codecview=mv=pf+bf+bb,"
-        "split=2[bs1][bs2];"
-        "[bs1]negate[bs_n];"
-        "[bs2]curves=preset=invert[bs_c];"
-        "[bs_n][bs_c]blend=all_mode=difference:all_opacity=0.8[bit_crush];"
+        # 1) ビットストリーム層: codecview → negate → 差分ブレンド
+        "[bs]codecview=mv=pf+bf+bb[bs_mv];"
+        "[bs_mv]negate[bs_neg];"
 
-        # 時間歪み＋フレームステップ
-        "[time]setpts='(PTS-STARTPTS)*(0.5+random(0))',"
-        "framestep=step='1+floor(random(1)*5)'[time_crush];"
+        # 2) 時間破壊: setpts*ランダム + framestep
+        "[time]setpts=PTS*(0.5+random(0)),framestep=step=1+floor(random(0)*5)[time_out];"
 
-        # RGB チャネル独立ノイズ
+        # 3) RGBチャネルノイズ: 各チャネルにノイズオフセット
         "[chan]split=3[r][g][b];"
-        "[r]lutrgb=r='val+random(1)*60':g='val':b='val'[R];"
-        "[g]lutrgb=r='val':g='val+random(1)*60':b='val'[G];"
-        "[b]lutrgb=r='val':g='val':b='val+random(1)*60'[B];"
+        "[r]lutrgb=r=val+random(0)*60:g=val:b=val[R];"
+        "[g]lutrgb=r=val:g=val+random(0)*60:b=val[G];"
+        "[b]lutrgb=r=val:g=val:b=val+random(0)*60[B];"
         "[R][G]blend=addition:all_opacity=0.5[RG];"
-        "[RG][B]blend=addition:all_opacity=0.5[chan_crush];"
+        "[RG][B]blend=addition:all_opacity=0.5[chan_out];"
 
-        # ミラータイル化
-        f"[mir]crop={w//tile}:{h}:0:0,tile={tile}x1,scale={w}:{h}[mir_crush];"
+        # 4) ミラータイル
+        f"[mir]crop={w//tile}:{h}:0:0,tile={tile}x1,scale={w}:{h}[mir_out];"
 
-        # 波形ジッター
-        f"[wav]geq=r='X+{wave}*sin(Y/{wave})':"
-        f"g='Y+{wave}*cos(X/{wave})':b='(X+Y)/2'[wav_crush];"
+        # 5) 波形ジッター
+        f"[wav]geq=r='X+{wave}*sin(Y/{wave})':g='Y+{wave}*cos(X/{wave})':b='(X+Y)/2'[wav_out];"
 
-        # ポスタライズ 1-bit ×2 段階
-        "[postA]format=gray,threshold=128,threshold=64,format=yuv420p[postA_crush];"
-        "[postB]format=rgb24,"
-        "lutrgb=r='if(gt(val,64),255,0)':"
-        "g='if(gt(val,64),255,0)':"
-        "b='if(gt(val,64),255,0)',format=yuv420p[postB_crush];"
+        # 6) ポスタライズ (lutrgb で 1-bit 化)
+        "[postA]format=rgb24,lutrgb=r='if(gt(val,128),255,0)':"
+        "g='if(gt(val,128),255,0)':b='if(gt(val,128),255,0)'[postA_out];"
+        "[postB]format=rgb24,lutrgb=r='if(gt(val,64),255,0)':"
+        "g='if(gt(val,64),255,0)':b='if(gt(val,64),255,0)'[postB_out];"
 
-        # 短時間バースト反転
-        f"[orig]eq='enable=between(n,{burst},{burst+2})':"
-        "contrast=3:brightness=0.2:saturation=-2,negate[burst_crush];"
+        # 7) 短時間バースト反転
+        f"[orig]eq=enable='between(n,{burst},{burst+2})',"
+        "contrast=3:brightness=0.2:saturation=-2,negate[burst_out];"
 
-        # tblend + cellauto (セルオートマトン風)
+        # 8) tblend + cellauto (セルノイズ)
         "[orig][orig]tblend=all_mode=lighten:all_opacity=0.5[t_bl];"
-        "[t_bl]cellauto=strength=1.0:mode=invert[cell_crush];"
+        "[t_bl]cellauto=strength=1.0:mode=invert[cell_out];"
 
-        # 最終ブレンド（全10レイヤーを複合）
-        "[orig][bit_crush]blend=difference:all_opacity=0.6[b1];"
-        "[b1][time_crush]blend=addition:all_opacity=0.6[b2];"
-        "[b2][chan_crush]blend=multiply:all_opacity=0.6[b3];"
-        "[b3][mir_crush]blend=grainextract:all_opacity=0.6[b4];"
-        "[b4][wav_crush]blend=overlay:all_opacity=0.5[b5];"
-        "[b5][postA_crush]blend=darken:all_opacity=0.5[b6];"
-        "[b6][postB_crush]blend=lighten:all_opacity=0.5[b7];"
-        "[b7][burst_crush]blend=hardlight:all_opacity=0.8[b8];"
-        "[b8][cell_crush]blend=addition:all_opacity=0.5[v]"
+        # 最終ブレンド：全レイヤーを差分・加算・乗算…で重ねる
+        "[orig][bs_neg]blend=all_mode=difference:all_opacity=0.7[b1];"
+        "[b1][time_out]blend=all_mode=addition:all_opacity=0.7[b2];"
+        "[b2][chan_out]blend=all_mode=multiply:all_opacity=0.7[b3];"
+        "[b3][mir_out]blend=all_mode=grainextract:all_opacity=0.6[b4];"
+        "[b4][wav_out]blend=all_mode=overlay:all_opacity=0.5[b5];"
+        "[b5][postA_out]blend=all_mode=darken:all_opacity=0.5[b6];"
+        "[b6][postB_out]blend=all_mode=lighten:all_opacity=0.5[b7];"
+        "[b7][burst_out]blend=all_mode=hardlight:all_opacity=0.8[b8];"
+        "[b8][cell_out]blend=all_mode=addition:all_opacity=0.5[v]"
     )
 
 def process_video(src, dst):
-    # 解像度・FPS 検出
-    w,h,fps = 320,240,30
+    # 解像度・FPS の自動検出
+    w, h, fps = 320, 240, 30
     try:
-        out = subprocess.run([
+        info = subprocess.run([
             "ffprobe","-v","error","-select_streams","v:0",
             "-show_entries","stream=width,height,avg_frame_rate",
             "-of","csv=p=0", src
-        ], capture_output=True, text=True, check=True).stdout.split(',')
-        w,h = map(int, out[0].split('x'))
-        num,den = map(int, out[2].split('/'))
+        ], capture_output=True, text=True, check=True).stdout.strip().split(',')
+        w, h = map(int, info[0].split('x'))
+        num, den = map(int, info[2].split('/'))
         fps = num/den if den else fps
     except:
         pass
 
-    fc = build_super_extreme_filter(w,h,fps)
+    fc = build_super_extreme_filter(w, h, fps)
     cmd = [
-        "ffmpeg","-y","-i",src,
-        "-filter_complex",fc,
-        "-map","[v]","-map","0:a",
-        "-c:v","libx264","-preset","ultrafast","-crf","50",
-        "-c:a","aac","-b:a","8k","-pix_fmt","yuv420p", dst
+        "ffmpeg", "-y", "-i", src,
+        "-filter_complex", fc,
+        "-map", "[v]", "-map", "0:a",
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "50",
+        "-c:a", "aac", "-b:a", "8k", "-pix_fmt", "yuv420p", dst
     ]
     print("Running super-extreme ffmpeg:")
     print(" ".join(cmd))
     subprocess.run(cmd, check=True)
 
 def main():
-    if len(sys.argv)<2:
+    if len(sys.argv) < 2:
         print("Usage: python ultra_chaos.py <video_url>"); sys.exit(1)
     url = sys.argv[1]
     ts  = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -108,5 +103,5 @@ def main():
     process_video(src, out)
     print("=== 超絶破壊完了 ===\nOutput:", out)
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
