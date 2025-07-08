@@ -59,12 +59,15 @@ def process_video(input_file, output_path):
     # ランダムなグリッチ値を生成
     random_rotate_angle_degrees = round(random.uniform(0.5, 10.0), 2) # 度数法で生成
     random_rotate_angle_radians = random_rotate_angle_degrees * math.pi / 180 # ラジアンに変換
-    random_geq_factor = random.randint(150, 500) # geqの強度をさらに上げる
-    glitch_fps = random.choice([1, 2, 5, 60, 120]) # 極端なフレームレートを混ぜる
-    pixel_block_size = random.randint(8, 32) # ピクセル化ブロックのサイズをランダムに
+    random_geq_factor = random.randint(300, 800) # geqの強度をさらに上げる
+    glitch_fps = random.choice([0.5, 1, 2, 3, 5, 10, 60, 120]) # 極端なフレームレートを混ぜる (0.5を追加)
+    pixel_block_size = random.randint(4, 48) # ピクセル化ブロックのサイズをランダムに (さらに極端に)
+    noise_strength = random.randint(20, 50) # ノイズフィルターの強度をさらに上げる
+    distortion_factor = round(random.uniform(0.01, 0.1), 3) # ディストーションの強度
+    random_chroma_shift = random.randint(10, 50) # 色ずれの強度
     
-    # ノイズの強度をランダムに
-    noise_strength = random.randint(10, 30) # ノイズフィルターの強度
+    # 意図的にエラーを誘発するためのパラメータ
+    deadzone = random.uniform(0.01, 0.2) # 量子化時のデッドゾーンをランダムに
 
     filter_complex = (
         # ====== 映像ストリーム1: オリジナルをベースにした破壊的なフィードバック ======
@@ -78,25 +81,37 @@ def process_video(input_file, output_path):
         f"rotate={random_rotate_angle_radians}:ow=rotw({random_rotate_angle_radians}):oh=roth({random_rotate_angle_radians})," # 大角度回転 (radiansを使用)
         f"scale={input_width}:{input_height}," # 回転後のサイズ調整
         "colorchannelmixer="
-            "1.8:0.2:0.2:0.2:0.2:1.8:0.2:0.2:0.2:0.2:0.2:1.8," # 各チャンネルを極端に混ぜる
+            "2.0:-0.5:-0.5:0: " # 赤チャンネルを強調し、他を打ち消す
+            "-0.5:2.0:-0.5:0: " # 緑チャンネルを強調
+            "-0.5:-0.5:2.0:0: " # 青チャンネルを強調
+            "0:0:0:1," # アルファチャンネルはそのまま (全体的に強調・ネガティブ効果)
         f"geq=r='random(1)*{random_geq_factor}':g='random(1)*{random_geq_factor}':b='random(1)*{random_geq_factor}'," # 強力なランダムノイズ
-        "gblur=sigma=7:steps=3," # ぼかし強度をさらに上げる
+        "gblur=sigma=10:steps=5," # ぼかし強度をさらに上げる
         f"scale=iw/{pixel_block_size}:ih/{pixel_block_size}," # ランダムな粒度でスケールダウン
         f"scale={input_width}:{input_height}:flags=neighbor," # ニアレストネイバーでピクセル効果
         "negate," # 色を反転
-        "loop=loop=20:size=1:start=0," # 短いループで映像をスタック
+        "loop=loop=30:size=1:start=0," # 短いループで映像をスタック (回数を増やす)
         "curves=preset=strong_contrast," # コントラストを強調し、色の破壊を促進
-        "setpts=PTS+random(0)*1/TB[glitch_feedback];" # setptsでランダムな遅延を付加
+        # 新しい破壊フィルターの追加
+        f"lenscorrection=k1={distortion_factor}:k2={distortion_factor}," # レンズディストーション
+        f"chromakey=0x00FF00:0.1:0.0," # 特定の色を透過（予期せぬ部分が透過する）
+        f"vignette=angle=PI/4:max_value=0.5," # 周辺減光で情報損失
+        f"edgedetect=mode=canny:low=0.1:high=0.4:intensity=5," # エッジ検出を強調
+        f"mpdecimate=hi=64*60:lo=64*10:frac=0.3," # フレームを間引くことで時間的な破壊
+        "setpts=PTS+random(0)*2/TB[glitch_feedback];" # setptsでランダムな遅延を付加 (遅延をさらに増やす)
 
         # ====== 映像ストリーム2: ノイズとカラーフォーマット破壊を組み合わせたレイヤー ======
         # 純粋なノイズと色空間変換による破壊
         f"color=c=black:s={input_width}x{input_height}:d=10," # 黒の背景
         f"format=yuv444p," # 高品質なYUV形式に変換（次に劣化させるため）
-        f"noise={noise_strength}," # <<<<<< ここを修正しました: 'all=15:alls=20' からシンプルな強度指定へ
+        f"noise={noise_strength}," # ノイズ強度
         f"format=rgb24," # RGBに変換（情報損失と色空間の破壊）
         f"format=yuv420p," # 再度YUVに戻す（さらなる情報損失）
-        "geq=r='(r(X,Y)+random(0)*100)':g='(g(X,Y)+random(0)*100)':b='(b(X,Y)+random(0)*100)'," # カラーチャンネルをさらにランダムにシフト
-        "setpts=PTS+random(0)*0.8/TB[noise_layer];" # ランダムな遅延
+        "geq=r='(r(X,Y)+random(0)*150)':g='(g(X,Y)+random(0)*150)':b='(b(X,Y)+random(0)*150)'," # カラーチャンネルをさらにランダムにシフト (強度アップ)
+        f"lutrgb=r='clip(r+random(1)*{random_chroma_shift},0,255)':g='clip(g+random(1)*{random_chroma_shift},0,255)':b='clip(b+random(1)*{random_chroma_shift},0,255)'," # ランダムなRGBシフト
+        f"crop={input_width/2}:{input_height/2}:{random.randint(0, input_width/4)}:{random.randint(0, input_height/4)},scale={input_width}:{input_height}:flags=neighbor," # ランダムな部分を切り取り拡大
+        f"shufflepixels=direction=horizontal:width={random.randint(1,4)}:height={random.randint(1,4)}," # ランダムなピクセルシャッフル
+        "setpts=PTS+random(0)*1.5/TB[noise_layer];" # ランダムな遅延 (遅延をさらに増やす)
 
         # ====== 映像ストリーム3: オーディオからの視覚グリッチフィードバック (実験的) ======
         # オーディオから得られる情報を視覚効果に変換する試み
@@ -104,16 +119,24 @@ def process_video(input_file, output_path):
         f"format=yuv420p," # showvolumeの出力フォーマットを調整
         f"scale={input_width}:{input_height}," # サイズを合わせる
         "geq=g='st(1, gt(abs(st(0, (T*2*PI*0.5)+sin(T*3*PI*0.1))) , 0.5)*255)'," # サイン波ノイズを映像に重ねる (適当な数式)
-        f"setpts=PTS+random(0)*1.2/TB[audio_glitch];"
+        f"setpts=PTS+random(0)*2.0/TB[audio_glitch];" # ランダムな遅延 (さらに増やす)
 
         # ====== 最終ブレンド ======
         # 3つのグリッチ映像ストリームを重ねる
         "[original][glitch_feedback]blend=all_mode=difference:all_opacity=1.0[blend1];" # 差分ブレンド
         "[blend1][noise_layer]blend=all_mode=addition:all_opacity=1.0[blend2];" # 加算ブレンドでノイズを強調
-        "[blend2][audio_glitch]blend=all_mode=grainmerge:all_opacity=1.0[v];" # さらにオーディオグリッチをマージ
+        "[blend2][audio_glitch]blend=all_mode=grainmerge:all_opacity=1.0[v_out];" # さらにオーディオグリッチをマージ
 
-        # オーディオはそのまま通過（ここではグリッチを適用しないが、必要なら破壊的なフィルターも可能）
-        "[0:a]acopy[a]"
+        # ====== オーディオの破壊 ======
+        # オーディオにもグリッチ効果を適用
+        "[0:a]acrusher=level_in=8:level_out=4:bits=random(1)*8+1:mode=log:aa=1:samples=random(1)*500+1:mix=0.8," # ビットクラッシュとサンプルレート破壊
+        "atempo=0.5," # テンポをランダムに変化
+        "compand=attacks=0:decays=0:points=-80/-80|-15/-15|0/0:soft-knee=0," # コンパンディングで音声を歪ませる
+        f"channelmap=channel_map=random(1)>0.5?FL-FL|FR-FR:FL-FR|FR-FL," # チャンネルをランダムに入れ替える
+        "adelay=delays=100|200:all=1," # ランダムな遅延
+        "afade=t=out:st=3:d=1," # 不規則なフェード
+        "aselect='random(0)*0.8', asetpts=N/SR/TB[a]" # ランダムに一部をスキップ
+
     )
 
     # エンコード設定
@@ -123,21 +146,22 @@ def process_video(input_file, output_path):
         "ffmpeg", "-y",
         "-i", input_file,
         "-filter_complex", filter_complex,
-        "-map", "[v]",
-        "-map", "[a]",
+        "-map", "[v_out]", # 最終的な映像ストリーム名を変更
+        "-map", "[a]", # 最終的な音声ストリーム名を変更
         "-c:v", "libx264",
         "-preset", "ultrafast", # 最速プリセットで、エンコード品質を犠牲にしてグリッチを誘発
-        "-crf", "35", # CRF値を大幅に上げて、圧縮による破壊を最大化
+        "-crf", "51", # CRF値を最大に上げて、圧縮による破壊を最大化 (最大値51)
         "-profile:v", "baseline", # プロファイルを下げ、デコードを難しくする
         "-level", "3.0", # レベルを下げ、制限をかける
         "-g", g_value, # Iフレーム間隔を大きくし、Pフレームのエラー伝播を助長
         "-keyint_min", "1", # キーフレームの最小間隔 (あまり影響しないかも)
         "-sc_threshold", "0", # シーンチェンジ検出を無効に
-        "-b:v", "50k", # 意図的に極端に低いビデオビットレートを設定し、データ不足による破損を誘発
-        "-slices", str(random.randint(8, 32)), # ランダムなスライス数でエンコード時のデータ破損を誘発
-        "-x264-params", "me=dia:subme=0:trellis=0:no-fast-pskip=1:no-dct-decimate=1:nr=5000", # x264のエンコードパラメータを調整し、品質を落とす
+        "-b:v", "10k", # 意図的に極端に低いビデオビットレートを設定し、データ不足による破損を誘発 (さらに下げる)
+        "-slices", str(random.randint(1, 64)), # ランダムなスライス数でエンコード時のデータ破損を誘発 (さらに広く)
+        f"-x264-params", 
+        "me=dia:subme=0:trellis=0:no-fast-pskip=1:no-dct-decimate=1:nr=10000:deadzone-inter={deadzone}:deadzone-intra={deadzone}:qcomp=0.0", # x264のエンコードパラメータを調整し、品質を落とす。deadzoneを追加
         "-c:a", "aac",
-        "-b:a", "32k", # 音声ビットレートをさらに下げ、音声の劣化を最大化
+        "-b:a", "16k", # 音声ビットレートをさらに下げ、音声の劣化を最大化 (さらに下げる)
         "-pix_fmt", "yuv420p",
         output_path
     ]
