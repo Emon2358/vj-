@@ -1,10 +1,10 @@
-name: Apply Complex Video Effects
+name: Analog Video Mixer Feedback Effect
 
 on:
   workflow_dispatch:
     inputs:
       VIDEO_LINK:
-        description: 'Video URL (e.g., "https://nicovideo.jp/watch/sm12345678")'
+        description: 'Nico Nico video URL (e.g., "https://nicovideo.jp/watch/sm12345678")'
         required: true
         default: ''
   push:
@@ -40,12 +40,12 @@ jobs:
       - name: Create videos directory
         run: mkdir -p videos
 
-      - name: Run Video Effects Script
+      - name: Run Video Feedback Effect Script
         env:
           VIDEO_LINK: ${{ github.event.inputs.VIDEO_LINK }}
         run: python scripts/apply_effects.py
 
-      - name: Commit and Push Processed Video to Repository
+      - name: Commit and Push Processed Video
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
