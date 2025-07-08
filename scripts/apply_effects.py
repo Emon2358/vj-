@@ -52,7 +52,7 @@ def process_video(input_file, output_path):
     random_opacity = round(random.uniform(0.8, 1.0), 2) # blendの不透明度を最大に近づける
     glitch_fps = random.choice([1, 2, 5, 60, 120]) # 極端なフレームレートを混ぜる
     pixel_block_size = random.randint(8, 32) # ピクセル化ブロックのサイズをランダムに
-    
+
     # ノイズの強度と周期をランダムに
     noise_freq = round(random.uniform(0.01, 0.5), 2)
     noise_amp = round(random.uniform(0.1, 0.5), 2)
@@ -60,7 +60,7 @@ def process_video(input_file, output_path):
     filter_complex = (
         # ====== 映像ストリーム1: オリジナルをベースにした破壊的なフィードバック ======
         "[0:v]split=2[original][feedback_raw];"
-        
+
         # feedback_raw に極端なグリッチを適用
         "[feedback_raw]"
         f"fps={glitch_fps}," # フレームレートを意図的に変更
@@ -133,7 +133,7 @@ def process_video(input_file, output_path):
 
     print("Running ffmpeg command:")
     print(" ".join(cmd))
-    
+
     try:
         subprocess.run(cmd, check=True)
     except subprocess.CalledProcessError as e:
@@ -146,14 +146,17 @@ def process_video(input_file, output_path):
         else:
             sys.exit("FFmpeg failed to produce any output file. The glitch settings might be too extreme for this input/FFmpeg version. Try slightly reducing random ranges or filter intensities.")
 
-# --- New main function ---
 def main():
+    # Check if a URL is provided as a command-line argument
+    if len(sys.argv) > 1:
+        video_url = sys.argv[1]
+    else:
+        print("Usage: python scripts/apply_effects.py <NicoNicoDouga_Video_URL>")
+        sys.exit("Error: No video URL provided as a command-line argument.")
+
     # Ensure the 'videos' directory exists
     os.makedirs("videos", exist_ok=True)
 
-    # You'll need to provide a video URL here. For example:
-    video_url = input("Enter the Nico Nico Douga video URL: ") 
-    
     # Generate a unique filename for the output
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     base_filename = f"glitch_{timestamp}"
