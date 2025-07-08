@@ -3,6 +3,7 @@ import os
 import sys
 import shlex
 from datetime import datetime
+import multiprocessing
 
 def download_video(url, base_filename):
     """
@@ -19,48 +20,47 @@ def download_video(url, base_filename):
 
 def process_video(input_file, output_path):
     """
-    Process the video so that only the drawing/lines remain visible.
-    The remaining areas are made transparent and then filled with a solid chroma-key color.
-    Each frame retains a pronounced afterimage (ghost trail).
-
-    Processing steps:
-      1. Extract edges using the 'edgedetect' filter.
-         (This produces white lines on a black background.)
-      2. Use the LUT filter to set the alpha channel: if the pixel value is greater than 128 then opaque, else transparent.
-      3. Create a solid green background (matching the chroma-key color).
-      4. Overlay the edge extraction (with transparency) onto the colored background.
-      5. Apply a tmix filter to produce a distinct afterimage effect.
-      6. Pass through audio unchanged.
+    Process the video with optimized performance settings.
     """
-    # Updated LUT syntax to "if(gt(val,128),255,0)" for proper parsing by FFmpeg.
+    # Get number of CPU cores for optimal threading
+    cpu_count = multiprocessing.cpu_count()
+    
     filter_complex = (
-        # Step 1: Extract edges.
         "[0:v]edgedetect=low=0.1:high=0.4,format=rgba,"
-        # Step 2: Use LUT to set alpha: if pixel value > 128 then opaque, else transparent.
         "lut=a='if(gt(val,128),255,0)'[lines];"
-        # Step 3: Create a solid green background (320x240 resolution).
         "color=c=green:s=320x240,format=rgba[bg];"
-        # Step 4: Overlay the edge image onto the background.
         "[bg][lines]overlay=format=auto,format=rgba[combined];"
-        # Step 5: Apply tmix for a pronounced ghost trail (afterimage effect).
         "[combined]tmix=frames=3:weights='1 1 1'[final];"
-        # Step 6: Pass through audio unchanged.
         "[0:a]anull[aout]"
     )
     
     cmd = [
-        "ffmpeg", "-y", "-i", input_file,
+        "ffmpeg", "-y",
+        # Input file with thread optimization
+        "-threads", str(cpu_count),
+        "-i", input_file,
+        # Filter complex
         "-filter_complex", filter_complex,
+        # Output options optimized for speed
         "-map", "[final]",
         "-map", "[aout]",
         "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-crf", "18",
+        "-preset", "ultrafast",     # Fastest encoding
+        "-tune", "fastdecode",      # Optimize for fast decoding
+        "-crf", "23",              # Slightly reduced quality for better speed
         "-c:a", "aac",
+        "-b:a", "128k",            # Reduced audio bitrate
+        "-movflags", "+faststart",  # Optimize for web playback
+        "-g", "30",                # Keyframe interval
+        "-bf", "2",                # Maximum 2 B-frames
+        "-maxrate", "2M",          # Maximum bitrate
+        "-bufsize", "2M",          # Buffer size
+        "-row-mt", "1",            # Enable row-based multithreading
+        "-threads", str(cpu_count), # Use all CPU cores
         output_path
     ]
     
-    print("Running ffmpeg command:")
+    print("Running ffmpeg command with performance optimization:")
     print(" ".join(cmd))
     subprocess.run(cmd, check=True)
 
@@ -75,8 +75,18 @@ def main():
     downloaded_file = download_video(video_link, now)
     output_file = f"videos/processed_{now}.mp4"
     
+    # Record start time
+    start_time = datetime.utcnow()
+    print(f"Processing started at: {start_time}")
+    
     process_video(downloaded_file, output_file)
-    print(f"Processing complete. Output video: {output_file}")
+    
+    # Record end time and calculate duration
+    end_time = datetime.utcnow()
+    duration = end_time - start_time
+    print(f"Processing completed at: {end_time}")
+    print(f"Total processing time: {duration}")
+    print(f"Output video: {output_file}")
 
 if __name__ == "__main__":
     main()
