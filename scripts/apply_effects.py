@@ -49,8 +49,10 @@ def process_video(input_file, output_path):
         f"scale={input_width}:{input_height}," # 回転によってサイズが変わる可能性があるので、再度元のサイズにスケール
         "colorchannelmixer=0.5:0.5:0.5:0.5:0.5:0.5:0.5:0.5:0.5," # 各チャンネルを強く混ぜる
         "geq=random(1)*100:random(1)*100:random(1)*100," # ピクセル値をランダムに変化させノイズを加える
-        "gblur=sigma=3:steps=1," # ★ここを修正: boxblurの代わりにgblurを使用
-        "pixelize=size=16," # ピクセルを大きくして視認性を下げる
+        "gblur=sigma=3:steps=1," # boxblurの代わりにgblurを使用
+        # ★ここを修正: pixelizeの代わりにscaleとsetsarを組み合わせてピクセレート効果を再現
+        f"scale=iw/{16}:ih/{16},"  # 小さな解像度にスケールダウン (例: 16x16ブロック)
+        f"scale={input_width}:{input_height}:flags=neighbor," # 元の解像度に戻す際にニアレストネイバーで補間し、ピクセル効果を出す
         "settb=AVTB," # タイムベース設定
         "setpts=PTS+0.1/TB[delayed];" # さらなる遅延効果
         
