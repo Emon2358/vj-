@@ -6,7 +6,7 @@ from datetime import datetime
 
 def download_video(url, base_filename):
     """
-    Download the video from the provided URL using yt-dlp.
+    Download video from the provided URL using yt-dlp.
     """
     url = url.strip()
     if not url:
@@ -19,45 +19,70 @@ def download_video(url, base_filename):
 
 def process_video(input_file, output_path):
     """
-    Apply multiple video effects simultaneously:
-    - インサイド・フィードバック (Inside Feedback)
-    - アウトサイド・フィードバック (Outside Feedback) 
-    - クロマキー (Chroma Key)
-    - スーパーインポーズ (Superimpose)
-    - コマ撮り (Stop Motion)
-    - テロップ映像 (Telop Video)
-    - オーディオ/ビデオ信号ミックス (Audio/Video Signal Mix)
+    Apply extreme glitch effects including:
+    - Analog-style distortions
+    - Kaleidoscope effect
+    - Heavy feedback effects
+    - Color glitches
+    - Random noise and interference
+    - VHS-style tracking errors
     """
     filter_complex = (
-        # Split input into multiple streams
-        "[0:v]split=6[base][fb1][fb2][chroma][motion][telop];"
+        # Split input into multiple streams for different effects
+        "[0:v]split=8[in1][in2][in3][in4][in5][in6][in7][in8];"
         
-        # インサイド・フィードバック: Heavy feedback effect with tmix
-        "[fb1]tmix=frames=30:weights='1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1'[inside_fb];"
+        # Heavy feedback with random color shifts
+        "[in1]tmix=frames=60:weights='1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1',"
+        "colorbalance=rs=.3:gs=-.3:bs=.3:rm=.1:gm=-.1:bm=.1:rh=.1:gh=-.1:bh=.1[fb1];"
         
-        # アウトサイド・フィードバック: Delayed feedback with setpts
-        "[fb2]setpts=PTS+0.5/TB[outside_fb];"
+        # VHS tracking errors and noise
+        "[in2]noise=alls=20:allf=t,"
+        "rgbashift=rh=-2:bv=2,"
+        "curves=r='0/0 0.5/0.4 1/1':g='0/0 0.5/0.6 1/1':b='0/0 0.5/0.5 1/1'[vhs];"
         
-        # クロマキー: Apply chroma key effect (green screen)
-        "[chroma]colorkey=0x00FF00:0.3:0.2[keyed];"
+        # Kaleidoscope effect (randomly applied)
+        "[in3]split[k1][k2];"
+        "[k1]rotate=PI/3:ow=rotw(PI/3):oh=roth(PI/3)[r1];"
+        "[k2]rotate=-PI/3:ow=rotw(PI/3):oh=roth(PI/3)[r2];"
+        "[r1][r2]blend=all_mode=screen[kalei];"
         
-        # コマ撮り: Stop motion effect
-        "[motion]select='not(mod(n,4))',setpts=N/FRAME_RATE/TB[stop_motion];"
+        # Extreme color glitches and wave distortions
+        "[in4]hue=h=2*PI*t:s=sin(t)+2,"
+        "waves=period=20:amplitude=20[wave];"
         
-        # テロップ: Scale down for telop overlay
-        "[telop]scale=iw/3:ih/3[small_telop];"
+        # Random signal interference
+        "[in5]format=rgb24,datascope=mode=color2,"
+        "rotate=PI/6:ow=rotw(PI/6):oh=roth(PI/6)[interf];"
         
-        # スーパーインポーズ: Blend all effects together
-        "[base][inside_fb]blend=all_mode=addition[tmp1];"
-        "[tmp1][outside_fb]blend=all_mode=lighten[tmp2];"
-        "[tmp2][keyed]overlay[tmp3];"
-        "[tmp3][stop_motion]blend=all_mode=screen[tmp4];"
-        "[tmp4][small_telop]overlay=W-w-10:H-h-10[final_video];"
+        # Heavy chromatic aberration
+        "[in6]split=3[r][g][b];"
+        "[r]lutrgb=r=val:g=0:b=0,crop=iw/1.01:ih/1.01:0:0[r1];"
+        "[g]lutrgb=r=0:g=val:b=0[g1];"
+        "[b]lutrgb=r=0:g=0:b=val,crop=iw/1.02:ih/1.02:0:0[b1];"
+        "[g1][r1]overlay=0:0[g1r1];"
+        "[g1r1][b1]overlay=0:0[chroma];"
         
-        # オーディオミックス: Mix original and delayed audio
-        "[0:a]asplit=2[a1][a2];"
-        "[a2]adelay=1000|1000[delayed];"
-        "[a1][delayed]amix=inputs=2:weights=1 1[final_audio]"
+        # Random scanlines and flickering
+        "[in7]geq='lum=128+(128-lum(X,Y))*sin(t*10):cb=128:cr=128',"
+        "curves=all='0/0 0.5/0.8 1/1'[scan];"
+        
+        # Time displacement glitch
+        "[in8]select='if(lt(random(0), 0.2), 1, 0)',setpts=N/FRAME_RATE/TB[glitch];"
+        
+        # Combine all effects
+        "[fb1][vhs]blend=all_mode=overlay[tmp1];"
+        "[tmp1][kalei]blend=all_mode=screen:shortest=1[tmp2];"
+        "[tmp2][wave]blend=all_mode=lighten[tmp3];"
+        "[tmp3][interf]blend=all_mode=addition[tmp4];"
+        "[tmp4][chroma]blend=all_mode=screen[tmp5];"
+        "[tmp5][scan]blend=all_mode=overlay[tmp6];"
+        "[tmp6][glitch]blend=all_mode=addition[final_video];"
+        
+        # Create heavily distorted audio
+        "[0:a]aecho=0.8:0.88:60:0.4,"
+        "flanger=delay=20:depth=2,"
+        "vibrato=f=7:d=0.5,"
+        "aphaser=type=t:speed=2:decay=0.6[final_audio]"
     )
 
     cmd = [
@@ -70,6 +95,7 @@ def process_video(input_file, output_path):
         "-preset", "veryfast",
         "-crf", "18",
         "-c:a", "aac",
+        "-b:a", "192k",
         output_path
     ]
 
