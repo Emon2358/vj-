@@ -11,10 +11,14 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # リポジトリへの書き込み権限を付与 (動画ファイルをプッシュするため)
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0 # 全てのブランチと履歴をフェッチ (git pushのため)
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -28,27 +32,22 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y ffmpeg
 
-    - name: Create videos directory
-      run: mkdir -p videos
-
     - name: Run video processing script
-      id: process_video
+      id: process_video # このステップの出力を参照するためにIDを設定
       run: |
+        echo "Processing video URL: ${{ inputs.video_url }}"
         python scripts/apply_effects.py "${{ inputs.video_url }}"
-      env:
-        # 環境変数としてFFMPEGやYT-DLP関連のパスを設定する必要がある場合（通常は不要だが、環境によっては役立つ）
-        # PATH: /usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      working-directory: ${{ github.workspace }} # ワークスペースのルートでスクリプトを実行
 
     - name: Find generated video file
       id: find_video
       run: |
         # 'videos' ディレクトリ内の最新の.mp4ファイルを見つける
-        # GitHub Actionsの実行環境では、ファイルのタイムスタンプがUTCになる可能性があるため、
-        # ファイル名のタイムスタンプとシステムタイムスタンプのどちらでソートするか検討
-        # ここではファイル名のタイムスタンプに基づいてソート
+        # ファイルのタイムスタンプに基づいてソート
         LATEST_VIDEO=$(ls -t videos/*.mp4 2>/dev/null | head -n 1)
         if [ -z "$LATEST_VIDEO" ]; then
           echo "Error: No .mp4 video file found in the 'videos' directory."
+          echo "No video_path set." # 出力が空の場合のエラーを防ぐ
           exit 1
         fi
         echo "Found video file: $LATEST_VIDEO"
@@ -56,16 +55,20 @@ jobs:
         echo "video_filename=$(basename "$LATEST_VIDEO")" >> $GITHUB_OUTPUT
 
     - name: Upload glitched video as artifact
+      if: success() && steps.find_video.outputs.video_path != '' # ファイルが見つかった場合のみアップロード
       uses: actions/upload-artifact@v4
       with:
         name: glitched-video-${{ steps.find_video.outputs.video_filename }}
         path: ${{ steps.find_video.outputs.video_path }}
 
     - name: Commit and push glitched video to repository
-      if: success() && steps.find_video.outputs.video_path # 処理が成功し、動画ファイルが見つかった場合のみ
+      if: success() && steps.find_video.outputs.video_path != '' # ファイルが見つかった場合のみコミット＆プッシュ
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
         git add ${{ steps.find_video.outputs.video_path }}
         git commit -m "Add glitched video: ${{ steps.find_video.outputs.video_filename }}" || echo "No changes to commit"
+        git pull --rebase # プッシュ前に最新の変更を取り込む
         git push
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # トークンを環境変数として設定
