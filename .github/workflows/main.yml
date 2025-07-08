@@ -1,10 +1,10 @@
-name: Apply Video Line Extraction Effects
+name: Apply Complex Video Effects
 
 on:
   workflow_dispatch:
     inputs:
       VIDEO_LINK:
-        description: 'Nico Nico video URL (e.g., "https://nicovideo.jp/watch/sm12345678")'
+        description: 'Video URL (e.g., "https://nicovideo.jp/watch/sm12345678")'
         required: true
         default: ''
   push:
