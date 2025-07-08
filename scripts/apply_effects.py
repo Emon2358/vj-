@@ -5,9 +5,6 @@ import shlex
 from datetime import datetime
 
 def download_video(url, base_filename):
-    """
-    Download video from the provided URL using yt-dlp.
-    """
     url = url.strip()
     if not url:
         sys.exit("No video URL provided")
@@ -19,42 +16,53 @@ def download_video(url, base_filename):
 
 def process_video(input_file, output_path):
     """
-    Apply extreme glitch effects with fixed dimensions and format conversions
+    Process video with optimized effects chain:
+    - VHS風のグリッチ効果
+    - 残像エフェクト
+    - ノイズ効果
+    スケーリングの問題を修正し、パフォーマンスを改善
     """
+    # Get input video dimensions
+    probe_cmd = [
+        "ffprobe",
+        "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height",
+        "-of", "csv=p=0",
+        input_file
+    ]
+    dimensions = subprocess.check_output(probe_cmd).decode().strip().split(',')
+    width, height = map(int, dimensions)
+
     filter_complex = (
-        # Initialize with format conversion to ensure compatibility
-        "[0:v]format=yuv420p,"
-        # Split into 4 streams
-        "split=4[base][distort][glitch][noise];"
+        # Start with format conversion and splitting
+        "[0:v]format=yuv420p,split=4[base][distort][glitch][noise];"
         
-        # Base effect with feedback and color distortion
-        "[base]tmix=frames=15:weights='1 1 1 1 1 1 1 1 1 1 1 1 1 1 1',"
-        "hue=h=2*PI*t:s=sin(t)+2[fb];"
+        # 残像エフェクト
+        "[base]tmix=frames=8:weights='1 1 1 1 1 1 1 1',"
+        f"scale={width}:{height}[fb];"
         
-        # VHS style distortion
+        # VHS風グリッチ
         "[distort]rgbashift=rh=-2:bv=2,"
-        "scale=320:240,"  # Force consistent dimensions
+        f"scale={width}:{height},"
         "curves=r='0/0 0.5/0.4 1/1':g='0/0 0.5/0.6 1/1':b='0/0 0.5/0.5 1/1'[vhs];"
         
-        # Random glitch effect with consistent dimensions
+        # フレーム抜きグリッチ
         "[glitch]select='if(mod(n,3),1,0)',"
-        "scale=320:240,"  # Force consistent dimensions
+        f"scale={width}:{height},"
         "setpts=N/FRAME_RATE/TB[gli];"
         
-        # Noise effect with consistent dimensions
+        # ノイズエフェクト
         "[noise]noise=alls=20:allf=t,"
-        "scale=320:240[noi];"  # Force consistent dimensions
+        f"scale={width}:{height}[noi];"
         
-        # Combine all effects ensuring same dimensions for blend operations
+        # エフェクトの合成
         "[fb][vhs]blend=all_mode=overlay[tmp1];"
         "[tmp1][gli]blend=all_mode=addition[tmp2];"
-        "[tmp2][noi]blend=all_mode=overlay,"
-        # Final format conversion
-        "format=yuv420p[final_video];"
+        "[tmp2][noi]blend=all_mode=overlay,format=yuv420p[final_video];"
         
-        # Audio effects
-        "[0:a]aecho=0.8:0.88:60:0.4,"
-        "tremolo=f=10:d=0.7[final_audio]"
+        # オーディオエフェクト
+        "[0:a]aecho=0.8:0.88:60:0.4,tremolo=f=10:d=0.7[final_audio]"
     )
 
     cmd = [
@@ -64,12 +72,12 @@ def process_video(input_file, output_path):
         "-map", "[final_video]",
         "-map", "[final_audio]",
         "-c:v", "libx264",
-        "-preset", "ultrafast",
-        "-tune", "grain",
-        "-crf", "23",
+        "-preset", "ultrafast",  # 最速の処理速度
+        "-tune", "grain",        # ノイズ/グレイン効果に最適化
+        "-crf", "23",           # 画質と圧縮率のバランス
         "-c:a", "aac",
         "-b:a", "192k",
-        "-pix_fmt", "yuv420p",  # Explicitly set output pixel format
+        "-pix_fmt", "yuv420p",  # 互換性の高いピクセルフォーマット
         output_path
     ]
 
