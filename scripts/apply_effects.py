@@ -15,45 +15,47 @@ def build_super_extreme_filter(w, h, fps):
     burst = random.randint(0, int(fps))      # バースト発生フレーム
 
     return (
-        # ストリーム分岐
         "[0:v]split=8[orig][bs][time][chan][mir][wav][postA][postB];"
 
-        # 1) ビットストリーム層: codecview → negate → 差分ブレンド
+        # 1) ビットストリーム層: codecview → negate
         "[bs]codecview=mv=pf+bf+bb[bs_mv];"
         "[bs_mv]negate[bs_neg];"
 
         # 2) 時間破壊: setpts*ランダム + framestep
-        "[time]setpts=PTS*(0.5+random(0)),framestep=step=1+floor(random(0)*5)[time_out];"
+        "[time]setpts=PTS*(0.5+random(1)),framestep=step=1+floor(random(1)*5)[time_out];"
 
-        # 3) RGBチャネルノイズ: 各チャネルにノイズオフセット
+        # 3) RGBチャネルノイズ
         "[chan]split=3[r][g][b];"
-        "[r]lutrgb=r=val+random(0)*60:g=val:b=val[R];"
-        "[g]lutrgb=r=val:g=val+random(0)*60:b=val[G];"
-        "[b]lutrgb=r=val:g=val:b=val+random(0)*60[B];"
+        "[r]lutrgb=r=val+random(1)*60:g=val:b=val[R];"
+        "[g]lutrgb=r=val:g=val+random(1)*60:b=val[G];"
+        "[b]lutrgb=r=val:g=val:b=val+random(1)*60[B];"
         "[R][G]blend=addition:all_opacity=0.5[RG];"
         "[RG][B]blend=addition:all_opacity=0.5[chan_out];"
 
-        # 4) ミラータイル
+        # 4) ミラータイル化
         f"[mir]crop={w//tile}:{h}:0:0,tile={tile}x1,scale={w}:{h}[mir_out];"
 
         # 5) 波形ジッター
         f"[wav]geq=r='X+{wave}*sin(Y/{wave})':g='Y+{wave}*cos(X/{wave})':b='(X+Y)/2'[wav_out];"
 
-        # 6) ポスタライズ (lutrgb で 1-bit 化)
-        "[postA]format=rgb24,lutrgb=r='if(gt(val,128),255,0)':"
-        "g='if(gt(val,128),255,0)':b='if(gt(val,128),255,0)'[postA_out];"
-        "[postB]format=rgb24,lutrgb=r='if(gt(val,64),255,0)':"
-        "g='if(gt(val,64),255,0)':b='if(gt(val,64),255,0)'[postB_out];"
+        # 6) ポスタライズ (lutrgb で1-bit)
+        "[postA]format=rgb24,"
+        "lutrgb=r='if(gt(val,128),255,0)':"
+        "g='if(gt(val,128),255,0)':"
+        "b='if(gt(val,128),255,0)'[postA_out];"
+        "[postB]format=rgb24,"
+        "lutrgb=r='if(gt(val,64),255,0)':"
+        "g='if(gt(val,64),255,0)':"
+        "b='if(gt(val,64),255,0)'[postB_out];"
 
         # 7) 短時間バースト反転
-        f"[orig]eq=enable='between(n,{burst},{burst+2})',"
-        "contrast=3:brightness=0.2:saturation=-2,negate[burst_out];"
+        f"[orig]eq=contrast=3:brightness=0.2:saturation=-2:enable=between(n\,{burst}\,{burst+2}),negate[burst_out];"
 
-        # 8) tblend + cellauto (セルノイズ)
+        # 8) tblend + cellauto (セルノイズ的歪み)
         "[orig][orig]tblend=all_mode=lighten:all_opacity=0.5[t_bl];"
         "[t_bl]cellauto=strength=1.0:mode=invert[cell_out];"
 
-        # 最終ブレンド：全レイヤーを差分・加算・乗算…で重ねる
+        # 最終ブレンド：全レイヤーを差分→加算→乗算…で重ねる
         "[orig][bs_neg]blend=all_mode=difference:all_opacity=0.7[b1];"
         "[b1][time_out]blend=all_mode=addition:all_opacity=0.7[b2];"
         "[b2][chan_out]blend=all_mode=multiply:all_opacity=0.7[b3];"
