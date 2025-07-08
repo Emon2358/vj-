@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import subprocess
 import os
 import sys
@@ -57,7 +58,6 @@ def process_video(input_file, output_path):
     noise_amp = round(random.uniform(0.1, 0.5), 2)
 
     # filter_complex 文字列をリストで構築し、後で結合する
-    # これにより、非常に長い文字列の可読性と管理性が向上する
     filters = []
 
     # ====== 映像ストリーム1: オリジナルをベースにした破壊的なフィードバック ======
@@ -95,9 +95,9 @@ def process_video(input_file, output_path):
 
     # ====== 映像ストリーム3: オーディオからの視覚グリッチフィードバック (実験的) ======
     filters.append(
-        "[0:a]asplit=2[audio_out][audio_for_video];" # オーディオを分岐
-        "[audio_for_video]showvolume=f=0:s=0:o=v:c=0xFFAABBCC," # 音量を視覚化
-        f"geq=g='st(1, gt(abs(st(0, (T*2*PI*{noise_freq})+sin(T*3*PI*{noise_amp}))) , 0.5)*255)'," # サイン波ノイズを映像に重ねる
+        "[0:a]asplit=2[audio_out][audio_for_video];"
+        "[audio_for_video]showvolume=f=0:s=0:o=v:c=0xFFAABBCC,"
+        f"geq=g='st(1, gt(abs(st(0, (T*2*PI*{noise_freq})+sin(T*3*PI*{noise_amp}))) , 0.5)*255)',"
         f"scale={input_width}:{input_height},"
         f"setpts=PTS+random(0)*1.2/TB[audio_glitch];"
     )
@@ -109,10 +109,10 @@ def process_video(input_file, output_path):
         "[blend2][audio_glitch]blend=all_mode=grainmerge:all_opacity=1.0[v];"
     )
 
-    # オーディオはそのまま通過（分岐したオーディオストリームを使用）
+    # オーディオはそのまま通過
     filters.append("[audio_out]acopy[a]")
 
-    filter_complex = "".join(filters) # リスト内の文字列を結合してfilter_complexを作成
+    filter_complex = "".join(filters)
 
     # エンコード設定
     cmd = [
