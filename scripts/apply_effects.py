@@ -19,43 +19,42 @@ def download_video(url, base_filename):
 
 def process_video(input_file, output_path):
     """
-    Apply extreme glitch effects with simplified but more stable filter chain
+    Apply extreme glitch effects with fixed dimensions and format conversions
     """
     filter_complex = (
-        # Split input into 5 streams for different effects
-        "[0:v]split=5[base][vhs][kalei][glitch][noise];"
+        # Initialize with format conversion to ensure compatibility
+        "[0:v]format=yuv420p,"
+        # Split into 4 streams
+        "split=4[base][distort][glitch][noise];"
         
-        # Base effect: heavy feedback with color distortion
-        "[base]tmix=frames=30:weights='1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1',"
+        # Base effect with feedback and color distortion
+        "[base]tmix=frames=15:weights='1 1 1 1 1 1 1 1 1 1 1 1 1 1 1',"
         "hue=h=2*PI*t:s=sin(t)+2[fb];"
         
-        # VHS style tracking errors
-        "[vhs]rgbashift=rh=-2:bv=2,"
-        "curves=r='0/0 0.5/0.4 1/1':g='0/0 0.5/0.6 1/1':b='0/0 0.5/0.5 1/1'[track];"
+        # VHS style distortion
+        "[distort]rgbashift=rh=-2:bv=2,"
+        "scale=320:240,"  # Force consistent dimensions
+        "curves=r='0/0 0.5/0.4 1/1':g='0/0 0.5/0.6 1/1':b='0/0 0.5/0.5 1/1'[vhs];"
         
-        # Kaleidoscope effect
-        "[kalei]rotate=PI/3:ow=rotw(PI/3):oh=roth(PI/3),"
-        "split=2[k1][k2];"
-        "[k1][k2]blend=all_mode=screen[kal];"
-        
-        # Random glitch effect
-        "[glitch]select='if(mod(n,5),1,0)',"
+        # Random glitch effect with consistent dimensions
+        "[glitch]select='if(mod(n,3),1,0)',"
+        "scale=320:240,"  # Force consistent dimensions
         "setpts=N/FRAME_RATE/TB[gli];"
         
-        # Noise and interference
+        # Noise effect with consistent dimensions
         "[noise]noise=alls=20:allf=t,"
-        "format=rgb24[noi];"
+        "scale=320:240[noi];"  # Force consistent dimensions
         
-        # Combine all effects
-        "[fb][track]blend=all_mode=overlay[tmp1];"
-        "[tmp1][kal]blend=all_mode=screen[tmp2];"
-        "[tmp2][gli]blend=all_mode=addition[tmp3];"
-        "[tmp3][noi]blend=all_mode=overlay[final_video];"
+        # Combine all effects ensuring same dimensions for blend operations
+        "[fb][vhs]blend=all_mode=overlay[tmp1];"
+        "[tmp1][gli]blend=all_mode=addition[tmp2];"
+        "[tmp2][noi]blend=all_mode=overlay,"
+        # Final format conversion
+        "format=yuv420p[final_video];"
         
         # Audio effects
         "[0:a]aecho=0.8:0.88:60:0.4,"
-        "flanger,"
-        "aphaser[final_audio]"
+        "tremolo=f=10:d=0.7[final_audio]"
     )
 
     cmd = [
@@ -65,11 +64,12 @@ def process_video(input_file, output_path):
         "-map", "[final_video]",
         "-map", "[final_audio]",
         "-c:v", "libx264",
-        "-preset", "ultrafast",  # 処理速度を上げるため ultrafast に変更
-        "-tune", "grain",        # ノイズや粗さを強調
-        "-crf", "23",           # 画質と圧縮率のバランスを調整
+        "-preset", "ultrafast",
+        "-tune", "grain",
+        "-crf", "23",
         "-c:a", "aac",
         "-b:a", "192k",
+        "-pix_fmt", "yuv420p",  # Explicitly set output pixel format
         output_path
     ]
 
