@@ -1,61 +1,71 @@
-name: Analog Video Mixer Feedback Effect
+name: Apply Glitch Effect to Nico Nico Video
 
 on:
   workflow_dispatch:
     inputs:
-      VIDEO_LINK:
-        description: 'Nico Nico video URL (e.g., "https://nicovideo.jp/watch/sm12345678")'
+      video_url:
+        description: 'ニコニコ動画のURLを入力してください (例: https://www.nicovideo.jp/watch/smXXXXXXXX)'
         required: true
-        default: ''
-  push:
-    paths:
-      - 'scripts/**'
-
-permissions:
-  contents: write
+        type: string
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - name: Set up Python, FFmpeg, and yt-dlp
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.10"
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
 
-      - name: Install system dependencies and Python packages
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-          pip install --upgrade pip
-          pip install yt-dlp
-        shell: bash
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install yt-dlp
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg
 
-      - name: Create videos directory
-        run: mkdir -p videos
+    - name: Create videos directory
+      run: mkdir -p videos
 
-      - name: Run Video Feedback Effect Script
-        env:
-          VIDEO_LINK: ${{ github.event.inputs.VIDEO_LINK }}
-        run: python scripts/apply_effects.py
+    - name: Run video processing script
+      id: process_video
+      run: |
+        python scripts/apply_effects.py "${{ inputs.video_url }}"
+      env:
+        # 環境変数としてFFMPEGやYT-DLP関連のパスを設定する必要がある場合（通常は不要だが、環境によっては役立つ）
+        # PATH: /usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 
-      - name: Commit and Push Processed Video
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git pull origin main
-          git add videos/processed_*.mp4
-          if ! git diff-index --quiet HEAD; then
-              git commit -m "Add processed video from workflow run on $(date +'%Y-%m-%d %H:%M:%S')"
-              git push origin main
-          else
-              echo "No changes to commit"
-          fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Find generated video file
+      id: find_video
+      run: |
+        # 'videos' ディレクトリ内の最新の.mp4ファイルを見つける
+        # GitHub Actionsの実行環境では、ファイルのタイムスタンプがUTCになる可能性があるため、
+        # ファイル名のタイムスタンプとシステムタイムスタンプのどちらでソートするか検討
+        # ここではファイル名のタイムスタンプに基づいてソート
+        LATEST_VIDEO=$(ls -t videos/*.mp4 2>/dev/null | head -n 1)
+        if [ -z "$LATEST_VIDEO" ]; then
+          echo "Error: No .mp4 video file found in the 'videos' directory."
+          exit 1
+        fi
+        echo "Found video file: $LATEST_VIDEO"
+        echo "video_path=$LATEST_VIDEO" >> $GITHUB_OUTPUT
+        echo "video_filename=$(basename "$LATEST_VIDEO")" >> $GITHUB_OUTPUT
+
+    - name: Upload glitched video as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: glitched-video-${{ steps.find_video.outputs.video_filename }}
+        path: ${{ steps.find_video.outputs.video_path }}
+
+    - name: Commit and push glitched video to repository
+      if: success() && steps.find_video.outputs.video_path # 処理が成功し、動画ファイルが見つかった場合のみ
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add ${{ steps.find_video.outputs.video_path }}
+        git commit -m "Add glitched video: ${{ steps.find_video.outputs.video_filename }}" || echo "No changes to commit"
+        git push
