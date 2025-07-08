@@ -17,26 +17,49 @@ def download_video(url, base_filename):
 
 def process_video(input_file, output_path):
     """
-    アナログビデオミキサーのフィードバック効果をエミュレート:
-    1. インプット1からの映像をアウトプット1へ
-    2. アウトプット1からインプット2へフィードバック(右/斜めにずれを入れる)
-    3. インプット1とインプット2の映像を合成
-    4. 上記プロセスを繰り返してフィードバックループを生成
+    映像を視認できないほどにグリッチ効果を適用します。
     """
+    # 入力ファイルの解像度を動的に取得するための初期値（もし取得できない場合）
+    # 実際にはffprobeなどで取得するのが望ましいですが、ここでは一旦固定値として進めます。
+    # あなたのログから 320x240 であることがわかっているので、それをデフォルトとします。
+    input_width = 320
+    input_height = 240
+
+    # FFprobeを使って実際の解像度を取得する（より堅牢な方法）
+    try:
+        probe_cmd = [
+            "ffprobe", "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=width,height", "-of", "csv=p=0:s=x",
+            input_file
+        ]
+        result = subprocess.run(probe_cmd, capture_output=True, text=True, check=True)
+        width_height = result.stdout.strip().split('x')
+        input_width = int(width_height[0])
+        input_height = int(width_height[1])
+        print(f"Detected input resolution: {input_width}x{input_height}")
+    except Exception as e:
+        print(f"Could not detect video resolution, using default {input_width}x{input_height}. Error: {e}")
+
+
     filter_complex = (
         # オリジナル映像をsplitで2つに分ける
         "[0:v]split=2[original][feedback];"
         
-        # フィードバック映像に遅延とずれを適用
-        "[feedback]tpad=start=0.1:stop=3," # 100ms遅延
-        "crop=iw:ih:0:0," # 映像の一部を切り取り (このcropは意味がないかもしれません)
-        "rotate=0.5:ow=rotw(0.5):oh=roth(0.5)," # 0.5度の回転で斜めずれを表現
-        "scale=320:240," # ★ここを修正: 元の解像度に戻す (320x240はログから取得)
+        # フィードバック映像に遅延とずれ、そして様々なグリッチ効果を適用
+        "[feedback]"
+        f"scale={input_width}:{input_height}," # まず元のサイズに揃える
+        "tpad=start=0.1:stop=3," # 100ms遅延
+        "rotate=1.0:ow=rotw(1.0):oh=roth(1.0)," # より大きな角度で回転（1.0ラジアン = 約57度）
+        f"scale={input_width}:{input_height}," # 回転によってサイズが変わる可能性があるので、再度元のサイズにスケール
+        "colorchannelmixer=0.5:0.5:0.5:0.5:0.5:0.5:0.5:0.5:0.5," # 各チャンネルを強く混ぜる
+        "geq=random(1)*100:random(1)*100:random(1)*100," # ピクセル値をランダムに変化させノイズを加える
+        "boxblur=luma_radius=5:luma_sigma=3:chroma_radius=5:chroma_sigma=3," # 全体をぼかして映像を破壊
+        "pixelize=size=16," # ピクセルを大きくして視認性を下げる
         "settb=AVTB," # タイムベース設定
         "setpts=PTS+0.1/TB[delayed];" # さらなる遅延効果
         
         # オリジナルとフィードバック映像をブレンド
-        "[original][delayed]blend=all_mode=overlay:all_opacity=0.7[v];"
+        "[original][delayed]blend=all_mode=overlay:all_opacity=0.9[v];" # 不透明度を上げてフィードバックの影響を強める
         
         # オーディオはそのまま通過
         "[0:a]acopy[a]"
@@ -51,7 +74,7 @@ def process_video(input_file, output_path):
         "-map", "[a]",
         "-c:v", "libx264",
         "-preset", "medium",
-        "-crf", "23",
+        "-crf", "23", # 画質設定。グリッチなので多少粗くても良い
         "-c:a", "aac",
         "-b:a", "128k",
         "-pix_fmt", "yuv420p",
