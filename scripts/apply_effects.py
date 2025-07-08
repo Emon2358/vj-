@@ -29,9 +29,9 @@ def process_video(input_file, output_path):
         
         # フィードバック映像に遅延とずれを適用
         "[feedback]tpad=start=0.1:stop=3," # 100ms遅延
-        "crop=iw:ih:0:0," # 映像の一部を切り取り
-        f"scale=iw:ih," # サイズ維持
+        "crop=iw:ih:0:0," # 映像の一部を切り取り (このcropは意味がないかもしれません)
         "rotate=0.5:ow=rotw(0.5):oh=roth(0.5)," # 0.5度の回転で斜めずれを表現
+        "scale=320:240," # ★ここを修正: 元の解像度に戻す (320x240はログから取得)
         "settb=AVTB," # タイムベース設定
         "setpts=PTS+0.1/TB[delayed];" # さらなる遅延効果
         
