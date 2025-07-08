@@ -67,7 +67,7 @@ def process_video(input_file, output_path):
     random_chroma_shift = random.randint(10, 50) # 色ずれの強度
     
     # 意図的にエラーを誘発するためのパラメータ
-    deadzone = random.uniform(0.01, 0.2) # 量子化時のデッドゾーンをランダムに
+    deadzone = round(random.uniform(0.01, 0.2), 2) # 量子化時のデッドゾーンをランダムに (floatのまま)
 
     filter_complex = (
         # ====== 映像ストリーム1: オリジナルをベースにした破壊的なフィードバック ======
@@ -109,7 +109,8 @@ def process_video(input_file, output_path):
         f"format=yuv420p," # 再度YUVに戻す（さらなる情報損失）
         "geq=r='(r(X,Y)+random(0)*150)':g='(g(X,Y)+random(0)*150)':b='(b(X,Y)+random(0)*150)'," # カラーチャンネルをさらにランダムにシフト (強度アップ)
         f"lutrgb=r='clip(r+random(1)*{random_chroma_shift},0,255)':g='clip(g+random(1)*{random_chroma_shift},0,255)':b='clip(b+random(1)*{random_chroma_shift},0,255)'," # ランダムなRGBシフト
-        f"crop={input_width/2}:{input_height/2}:{random.randint(0, input_width/4)}:{random.randint(0, input_height/4)},scale={input_width}:{input_height}:flags=neighbor," # ランダムな部分を切り取り拡大
+        # ここを修正: random.randintの引数をintにキャスト
+        f"crop={input_width/2}:{input_height/2}:{int(random.randint(0, int(input_width/4)))}:{int(random.randint(0, int(input_height/4)))},scale={input_width}:{input_height}:flags=neighbor," # ランダムな部分を切り取り拡大
         f"shufflepixels=direction=horizontal:width={random.randint(1,4)}:height={random.randint(1,4)}," # ランダムなピクセルシャッフル
         "setpts=PTS+random(0)*1.5/TB[noise_layer];" # ランダムな遅延 (遅延をさらに増やす)
 
@@ -159,7 +160,7 @@ def process_video(input_file, output_path):
         "-b:v", "10k", # 意図的に極端に低いビデオビットレートを設定し、データ不足による破損を誘発 (さらに下げる)
         "-slices", str(random.randint(1, 64)), # ランダムなスライス数でエンコード時のデータ破損を誘発 (さらに広く)
         f"-x264-params", 
-        "me=dia:subme=0:trellis=0:no-fast-pskip=1:no-dct-decimate=1:nr=10000:deadzone-inter={deadzone}:deadzone-intra={deadzone}:qcomp=0.0", # x264のエンコードパラメータを調整し、品質を落とす。deadzoneを追加
+        f"me=dia:subme=0:trellis=0:no-fast-pskip=1:no-dct-decimate=1:nr=10000:deadzone-inter={int(deadzone*100)}:deadzone-intra={int(deadzone*100)}:qcomp=0.0", # x264のエンコードパラメータを調整し、品質を落とす。deadzoneを追加
         "-c:a", "aac",
         "-b:a", "16k", # 音声ビットレートをさらに下げ、音声の劣化を最大化 (さらに下げる)
         "-pix_fmt", "yuv420p",
