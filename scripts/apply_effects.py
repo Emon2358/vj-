@@ -5,6 +5,7 @@ import shlex
 from datetime import datetime
 
 def download_video(url, base_filename):
+    """ニコニコ動画からダウンロード"""
     url = url.strip()
     if not url:
         sys.exit("No video URL provided")
@@ -16,112 +17,50 @@ def download_video(url, base_filename):
 
 def process_video(input_file, output_path):
     """
-    Process video with optimized effects and compression for GitHub's 100MB limit
+    アナログビデオミキサーのフィードバック効果をエミュレート:
+    1. インプット1からの映像をアウトプット1へ
+    2. アウトプット1からインプット2へフィードバック(右/斜めにずれを入れる)
+    3. インプット1とインプット2の映像を合成
+    4. 上記プロセスを繰り返してフィードバックループを生成
     """
-    # Get input video dimensions
-    probe_cmd = [
-        "ffprobe",
-        "-v", "error",
-        "-select_streams", "v:0",
-        "-show_entries", "stream=width,height",
-        "-of", "csv=p=0",
-        input_file
-    ]
-    dimensions = subprocess.check_output(probe_cmd).decode().strip().split(',')
-    width, height = map(int, dimensions)
-    
-    # Calculate new dimensions to reduce file size
-    # Maintain aspect ratio but reduce resolution
-    new_width = 480
-    new_height = int((new_width/width) * height)
-    new_height = new_height - (new_height % 2)  # Make sure height is even
-
     filter_complex = (
-        # Start with format conversion, scaling, and splitting
-        f"[0:v]format=yuv420p,scale={new_width}:{new_height},"
-        "split=4[base][distort][glitch][noise];"
+        # オリジナル映像をsplitで2つに分ける
+        "[0:v]split=2[original][feedback];"
         
-        # 残像エフェクト
-        "[base]tmix=frames=6:weights='1 1 1 1 1 1'[fb];"
+        # フィードバック映像に遅延とずれを適用
+        "[feedback]tpad=start=0.1:stop=3," # 100ms遅延
+        "crop=iw:ih:0:0," # 映像の一部を切り取り
+        f"scale=iw:ih," # サイズ維持
+        "rotate=0.5:ow=rotw(0.5):oh=roth(0.5)," # 0.5度の回転で斜めずれを表現
+        "settb=AVTB," # タイムベース設定
+        "setpts=PTS+0.1/TB[delayed];" # さらなる遅延効果
         
-        # VHS風グリッチ
-        "[distort]rgbashift=rh=-2:bv=2,"
-        "curves=r='0/0 0.5/0.4 1/1':g='0/0 0.5/0.6 1/1':b='0/0 0.5/0.5 1/1'[vhs];"
+        # オリジナルとフィードバック映像をブレンド
+        "[original][delayed]blend=all_mode=overlay:all_opacity=0.7[v];"
         
-        # フレーム抜きグリッチ
-        "[glitch]select='if(mod(n,3),1,0)',"
-        "setpts=N/FRAME_RATE/TB[gli];"
-        
-        # ノイズエフェクト
-        "[noise]noise=alls=20:allf=t[noi];"
-        
-        # エフェクトの合成
-        "[fb][vhs]blend=all_mode=overlay[tmp1];"
-        "[tmp1][gli]blend=all_mode=addition[tmp2];"
-        "[tmp2][noi]blend=all_mode=overlay,format=yuv420p[final_video];"
-        
-        # オーディオエフェクト - より低いビットレート
-        "[0:a]aecho=0.8:0.88:60:0.4,tremolo=f=10:d=0.7,volume=0.8[final_audio]"
+        # オーディオはそのまま通過
+        "[0:a]acopy[a]"
     )
 
-    # Two-pass encoding for better compression
-    pass1_cmd = [
+    # エンコード設定
+    cmd = [
         "ffmpeg", "-y",
         "-i", input_file,
         "-filter_complex", filter_complex,
-        "-map", "[final_video]",
-        "-map", "[final_audio]",
+        "-map", "[v]",
+        "-map", "[a]",
         "-c:v", "libx264",
-        "-preset", "slow",     # より効率的な圧縮のためにpresetを変更
-        "-tune", "grain",
-        "-b:v", "800k",       # ビデオビットレートを制限
-        "-pass", "1",
-        "-f", "null",
-        "/dev/null"
-    ]
-
-    pass2_cmd = [
-        "ffmpeg", "-y",
-        "-i", input_file,
-        "-filter_complex", filter_complex,
-        "-map", "[final_video]",
-        "-map", "[final_audio]",
-        "-c:v", "libx264",
-        "-preset", "slow",
-        "-tune", "grain",
-        "-b:v", "800k",
-        "-pass", "2",
+        "-preset", "medium",
+        "-crf", "23",
         "-c:a", "aac",
-        "-b:a", "96k",        # オーディオビットレートを低く設定
-        "-ac", "2",           # ステレオ
-        "-ar", "44100",       # サンプルレートを標準的な値に
+        "-b:a", "128k",
         "-pix_fmt", "yuv420p",
         output_path
     ]
 
-    print("Running first pass...")
-    subprocess.run(pass1_cmd, check=True)
-    
-    print("Running second pass...")
-    subprocess.run(pass2_cmd, check=True)
-
-    # Check final file size
-    file_size = os.path.getsize(output_path)
-    if file_size > 95 * 1024 * 1024:  # If still over 95MB
-        print("Warning: File still too large, applying emergency compression...")
-        emergency_output = output_path.replace('.mp4', '_compressed.mp4')
-        emergency_cmd = [
-            "ffmpeg", "-y",
-            "-i", output_path,
-            "-c:v", "libx264",
-            "-preset", "veryslow",
-            "-crf", "28",
-            "-c:a", "aac",
-            "-b:a", "64k",
-            emergency_output
-        ]
-        subprocess.run(emergency_cmd, check=True)
-        os.replace(emergency_output, output_path)
+    print("Running ffmpeg command:")
+    print(" ".join(cmd))
+    subprocess.run(cmd, check=True)
 
 def main():
     video_link = os.environ.get("VIDEO_LINK", "")
@@ -137,7 +76,7 @@ def main():
     process_video(downloaded_file, output_file)
     print(f"Processing complete. Output video: {output_file}")
     
-    # 最終確認
+    # ファイルサイズの確認
     final_size = os.path.getsize(output_file)
     print(f"Final file size: {final_size / 1024 / 1024:.2f}MB")
 
