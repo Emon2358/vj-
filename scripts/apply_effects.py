@@ -65,6 +65,7 @@ def process_video(input_file, output_path):
     noise_strength = random.randint(20, 50) # ノイズフィルターの強度をさらに上げる
     distortion_factor = round(random.uniform(0.01, 0.1), 3) # ディストーションの強度
     random_chroma_shift = random.randint(10, 50) # 色ずれの強度
+    random_vignette_darkness = round(random.uniform(0.3, 0.8), 2) # ビニエットの暗さ (0.0 - 1.0)
     
     # 意図的にエラーを誘発するためのパラメータ
     deadzone = round(random.uniform(0.01, 0.2), 2) # 量子化時のデッドゾーンをランダムに (floatのまま)
@@ -95,7 +96,7 @@ def process_video(input_file, output_path):
         # 新しい破壊フィルターの追加
         f"lenscorrection=k1={distortion_factor}:k2={distortion_factor}," # レンズディストーション
         f"chromakey=0x00FF00:0.1:0.0," # 特定の色を透過（予期せぬ部分が透過する）
-        f"vignette=angle=PI/4:max_value=0.5," # 周辺減光で情報損失
+        f"vignette=angle=PI/4:d={random_vignette_darkness}," # <<<< ここを修正: max_value を d (darkness) に変更
         f"edgedetect=mode=canny:low=0.1:high=0.4:intensity=5," # エッジ検出を強調
         f"mpdecimate=hi=64*60:lo=64*10:frac=0.3," # フレームを間引くことで時間的な破壊
         "setpts=PTS+random(0)*2/TB[glitch_feedback];" # setptsでランダムな遅延を付加 (遅延をさらに増やす)
@@ -109,7 +110,6 @@ def process_video(input_file, output_path):
         f"format=yuv420p," # 再度YUVに戻す（さらなる情報損失）
         "geq=r='(r(X,Y)+random(0)*150)':g='(g(X,Y)+random(0)*150)':b='(b(X,Y)+random(0)*150)'," # カラーチャンネルをさらにランダムにシフト (強度アップ)
         f"lutrgb=r='clip(r+random(1)*{random_chroma_shift},0,255)':g='clip(g+random(1)*{random_chroma_shift},0,255)':b='clip(b+random(1)*{random_chroma_shift},0,255)'," # ランダムなRGBシフト
-        # ここを修正: random.randintの引数をintにキャスト
         f"crop={input_width/2}:{input_height/2}:{int(random.randint(0, int(input_width/4)))}:{int(random.randint(0, int(input_height/4)))},scale={input_width}:{input_height}:flags=neighbor," # ランダムな部分を切り取り拡大
         f"shufflepixels=direction=horizontal:width={random.randint(1,4)}:height={random.randint(1,4)}," # ランダムなピクセルシャッフル
         "setpts=PTS+random(0)*1.5/TB[noise_layer];" # ランダムな遅延 (遅延をさらに増やす)
